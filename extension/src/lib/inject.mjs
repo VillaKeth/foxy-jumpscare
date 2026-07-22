@@ -2,29 +2,34 @@ export const SENTINEL_ID = 'foxy-jumpscare-overlay';
 export const OVERLAY_MESSAGE = 'foxy:overlay-done';
 
 /**
- * Runs inside the page. Takes doc/win explicitly so it is testable in node;
- * the service worker supplies `document` and `window` when it injects this.
+ * Runs inside the page, injected by chrome.scripting.executeScript.
  *
- * The literals below are duplicated rather than referencing the exports on
- * purpose: this function is serialised with toString() and re-created inside
- * the page, where module scope does not exist. Closing over anything would
- * throw a ReferenceError at the far end.
+ * Two constraints shape this function, both learned the hard way:
  *
- * An extension-origin iframe rather than a raw <video>, for three reasons that
- * each break injected elements on real sites:
+ *  1. It is serialised with toString() and re-created in the page, so it must
+ *     be entirely self-contained. It cannot close over module scope - hence the
+ *     duplicated literals rather than references to the exports above.
+ *  2. It must take no document/window parameters. MV3 runs injected code in an
+ *     isolated world governed by the *extension's* CSP, which has no
+ *     'unsafe-eval', so a `new Function(...)` wrapper that would let us pass
+ *     them in is silently neutered - it yields null rather than throwing.
+ *     Reading the globals directly is the only approach that works.
+ *
+ * The overlay is an extension-origin iframe rather than a raw <video>, for
+ * three reasons that each break injected elements on real sites:
  *   1. Strict page CSP blocks injected media outright.
  *   2. Content-script media inherits the page's autoplay policy, so audio is
  *      silently dropped on any page the user has not clicked.
  *   3. Host stylesheets reach injected nodes.
  * The iframe has its own origin and CSP, and is immune to all three.
  */
-export function injectOverlayFn(doc, win, iframeUrl, failsafeMs) {
+export function injectOverlayFn(iframeUrl, failsafeMs) {
   const SENTINEL = 'foxy-jumpscare-overlay';
   const DONE = 'foxy:overlay-done';
 
-  if (doc.getElementById(SENTINEL)) return 'already-present';
+  if (document.getElementById(SENTINEL)) return 'already-present';
 
-  const iframe = doc.createElement('iframe');
+  const iframe = document.createElement('iframe');
   iframe.id = SENTINEL;
   iframe.src = iframeUrl;
   // Delegates autoplay to the cross-origin frame; without it, no audio.
@@ -43,13 +48,13 @@ export function injectOverlayFn(doc, win, iframeUrl, failsafeMs) {
   });
 
   let timer = null;
-  let done = false;
+  let finished = false;
 
   const teardown = () => {
-    if (done) return;
-    done = true;
-    win.removeEventListener('message', onMessage);
-    if (timer !== null) win.clearTimeout(timer);
+    if (finished) return;
+    finished = true;
+    window.removeEventListener('message', onMessage);
+    if (timer !== null) window.clearTimeout(timer);
     iframe.remove();
   };
 
@@ -57,12 +62,11 @@ export function injectOverlayFn(doc, win, iframeUrl, failsafeMs) {
     if (event && event.data && event.data.type === DONE) teardown();
   }
 
-  win.addEventListener('message', onMessage);
+  window.addEventListener('message', onMessage);
   // Independent of the video: if it fails to decode, 'ended' never fires and
-  // the user would be left with a permanent invisible overlay swallowing
-  // nothing but still present in the DOM.
-  timer = win.setTimeout(teardown, failsafeMs);
+  // the overlay would sit in the DOM forever.
+  timer = window.setTimeout(teardown, failsafeMs);
 
-  doc.documentElement.appendChild(iframe);
+  document.documentElement.appendChild(iframe);
   return 'injected';
 }

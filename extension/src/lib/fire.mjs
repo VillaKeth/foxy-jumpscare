@@ -22,15 +22,13 @@ export async function attemptFire(browser) {
   try {
     const [first] = await browser.scripting.executeScript({
       target: { tabId: tab.id },
-      // executeScript serialises this function and re-creates it inside the
-      // page, where module scope does not exist. So the injector cannot be
-      // passed directly - it travels as source text and is rebuilt on arrival,
-      // which is also the only way to hand it the page's document/window.
-      func: (source, url, failsafeMs) => {
-        const fn = new Function(`return (${source})`)();
-        return fn(document, window, url, failsafeMs);
-      },
-      args: [injectOverlayFn.toString(), iframeUrl, FAILSAFE_MS],
+      // Passed directly. An earlier version wrapped this in
+      // `new Function(source)` so document/window could be handed in as
+      // arguments; MV3 runs injected code under the extension's CSP, which has
+      // no 'unsafe-eval', and the wrapper silently evaluated to null instead of
+      // throwing. The injector reads the globals itself for that reason.
+      func: injectOverlayFn,
+      args: [iframeUrl, FAILSAFE_MS],
     });
 
     const result = first?.result;

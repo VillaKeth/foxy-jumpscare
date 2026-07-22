@@ -31,6 +31,8 @@ dist/
 
 # --- Tooling scratch ---
 .playwright-mcp/
+test-results/
+playwright-report/
 
 # --- OS / editor ---
 Thumbs.db

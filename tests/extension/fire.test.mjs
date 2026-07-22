@@ -27,14 +27,15 @@ describe('attemptFire', () => {
     expect(call.args).toContain('chrome-extension://abc/overlay.html');
   });
 
-  it('sends the injector as source text, not as a closure', async () => {
-    // executeScript serialises func and re-creates it in the page, where module
-    // scope does not exist. The injector has to travel as source.
+  it('passes the injector directly rather than through an eval wrapper', async () => {
+    // MV3 runs injected code under the extension's CSP, which has no
+    // 'unsafe-eval'. A new Function(...) wrapper evaluates to null instead of
+    // throwing, so the failure is silent - guard against reintroducing it.
     const browser = fakeBrowser();
     await attemptFire(browser);
     const call = browser.scripting.executeScript.mock.calls[0][0];
-    const source = call.args.find((a) => typeof a === 'string' && a.includes('function'));
-    expect(source).toMatch(/createElement/);
+    expect(call.func.toString()).toMatch(/createElement/);
+    expect(call.func.toString()).not.toMatch(/new Function/);
   });
 
   it('does not inject into a privileged page, and reports failure', async () => {

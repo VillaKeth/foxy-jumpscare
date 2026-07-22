@@ -6,9 +6,11 @@
   "scripts": {
     "assets": "node tools/build-assets.mjs",
     "build": "node tools/build-extension.mjs",
-    "test": "vitest run"
+    "test": "vitest run",
+    "test:e2e": "playwright test"
   },
   "devDependencies": {
+    "@playwright/test": "^1.61.1",
     "vitest": "^3.2.4"
   }
 }

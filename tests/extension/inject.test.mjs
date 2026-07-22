@@ -1,25 +1,25 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { SENTINEL_ID, OVERLAY_MESSAGE, injectOverlayFn } from '../../extension/src/lib/inject.mjs';
 
 const URL_ = 'chrome-extension://abc/overlay.html';
 
+/**
+ * injectOverlayFn reads `document` and `window` as globals rather than taking
+ * them as parameters, because MV3's isolated world forbids the eval-based
+ * wrapper that passing them would require. So the test swaps the globals.
+ */
 function fakeDom() {
   const listeners = {};
-  const created = [];
   const appended = [];
   const byId = {};
 
   const doc = {
     getElementById: (id) => byId[id] ?? null,
-    createElement: (tag) => {
-      const el = {
-        tag, id: '', src: '', style: {}, attrs: {},
-        setAttribute(k, v) { this.attrs[k] = v; },
-        remove() { delete byId[this.id]; this.removed = true; },
-      };
-      created.push(el);
-      return el;
-    },
+    createElement: (tag) => ({
+      tag, id: '', src: '', style: {}, attrs: {},
+      setAttribute(k, v) { this.attrs[k] = v; },
+      remove() { delete byId[this.id]; this.removed = true; },
+    }),
     documentElement: {
       appendChild: (el) => { appended.push(el); byId[el.id] = el; },
     },
@@ -35,16 +35,25 @@ function fakeDom() {
     emit: (name, ev) => (listeners[name] ?? []).forEach((f) => f(ev)),
   };
 
-  return { doc, win, created, appended, byId, listeners };
+  return { doc, win, appended, byId, listeners };
 }
 
 let dom;
-beforeEach(() => { dom = fakeDom(); });
+
+beforeEach(() => {
+  dom = fakeDom();
+  globalThis.document = dom.doc;
+  globalThis.window = dom.win;
+});
+
+afterEach(() => {
+  delete globalThis.document;
+  delete globalThis.window;
+});
 
 describe('injectOverlayFn', () => {
   it('appends an extension-origin iframe covering the viewport', () => {
-    const result = injectOverlayFn(dom.doc, dom.win, URL_, 3000);
-    expect(result).toBe('injected');
+    expect(injectOverlayFn(URL_, 3000)).toBe('injected');
 
     const [iframe] = dom.appended;
     expect(iframe.tag).toBe('iframe');
@@ -58,37 +67,34 @@ describe('injectOverlayFn', () => {
   });
 
   it('delegates autoplay permission to the iframe', () => {
-    injectOverlayFn(dom.doc, dom.win, URL_, 3000);
+    injectOverlayFn(URL_, 3000);
     // Without this the cross-origin iframe inherits the page's autoplay
     // restriction and the scream is silently dropped.
     expect(dom.appended[0].attrs.allow).toBe('autoplay');
   });
 
   it('refuses to inject twice', () => {
-    injectOverlayFn(dom.doc, dom.win, URL_, 3000);
-    const result = injectOverlayFn(dom.doc, dom.win, URL_, 3000);
-    expect(result).toBe('already-present');
+    injectOverlayFn(URL_, 3000);
+    expect(injectOverlayFn(URL_, 3000)).toBe('already-present');
     expect(dom.appended).toHaveLength(1);
   });
 
   it('removes the iframe when the overlay reports it is done', () => {
-    injectOverlayFn(dom.doc, dom.win, URL_, 3000);
-    const iframe = dom.appended[0];
+    injectOverlayFn(URL_, 3000);
     dom.win.emit('message', { data: { type: OVERLAY_MESSAGE } });
-    expect(iframe.removed).toBe(true);
+    expect(dom.appended[0].removed).toBe(true);
   });
 
   it('ignores unrelated postMessage traffic', () => {
-    injectOverlayFn(dom.doc, dom.win, URL_, 3000);
-    const iframe = dom.appended[0];
+    injectOverlayFn(URL_, 3000);
     dom.win.emit('message', { data: { type: 'something-else' } });
     dom.win.emit('message', { data: null });
     dom.win.emit('message', {});
-    expect(iframe.removed).toBeUndefined();
+    expect(dom.appended[0].removed).toBeUndefined();
   });
 
   it('arms a failsafe teardown timer', () => {
-    injectOverlayFn(dom.doc, dom.win, URL_, 3000);
+    injectOverlayFn(URL_, 3000);
     expect(dom.win.setTimeout).toHaveBeenCalledWith(expect.any(Function), 3000);
 
     // Firing the failsafe must remove the iframe even with no 'done' message.
@@ -98,9 +104,18 @@ describe('injectOverlayFn', () => {
   });
 
   it('stops listening once torn down', () => {
-    injectOverlayFn(dom.doc, dom.win, URL_, 3000);
+    injectOverlayFn(URL_, 3000);
     dom.win.emit('message', { data: { type: OVERLAY_MESSAGE } });
     expect(dom.listeners.message).toHaveLength(0);
     expect(dom.win.clearTimeout).toHaveBeenCalledWith(123);
+  });
+
+  it('is self-contained enough to survive serialisation', () => {
+    // executeScript sends this as source text. If it ever closes over a
+    // module-scope identifier, it will throw a ReferenceError in the page
+    // instead of failing here.
+    const source = injectOverlayFn.toString();
+    expect(source).not.toMatch(/\bSENTINEL_ID\b/);
+    expect(source).not.toMatch(/\bOVERLAY_MESSAGE\b/);
   });
 });
