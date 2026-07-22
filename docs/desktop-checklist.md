@@ -1,9 +1,23 @@
 # Desktop release checklist
 
-Everything testable without a desktop — the roll, the tick accounting,
-persistence — is covered by xunit in `FoxyJumpscare.Core.Tests`. The overlay's
-real failure modes are DPI, focus stealing, and multi-monitor audio, none of
-which a headless test can observe. This list is the honest substitute.
+Most of this is now automated:
+
+```powershell
+dotnet test desktop/FoxyJumpscare.Core.Tests   # roll, ticks, persistence, DPI maths
+pwsh -File tools/verify-desktop.ps1            # focus, window styles, screen coverage
+```
+
+`verify-desktop.ps1` opens Notepad purely as a focus holder, fires the overlay,
+and samples the foreground window 40 times. It asserts the foreground is never
+**the overlay** — not that focus never changes, which would fail whenever the
+person running it clicks something and would prove nothing.
+
+DPI arithmetic moved into `ScreenMath` in the Core project so it can be tested
+against scale factors and monitor layouts this machine does not have: 125%, 150%,
+200%, non-square scaling, and monitors positioned left of or above the primary
+(which report negative coordinates).
+
+What remains below is what neither can reach.
 
 ## Build
 
@@ -15,17 +29,13 @@ dotnet publish desktop/FoxyJumpscare -c Release -r win-x64 --self-contained fals
 
 - [ ] Tray icon appears; every menu item works; Quit exits with no orphan process
       (confirm in Task Manager — a surviving process keeps firing invisibly)
-- [ ] Test Scare plays fullscreen on the **primary** monitor with audio
-      (`FoxyJumpscare.exe --test-scare` fires once without touching the tray menu)
-- [ ] With multiple monitors: **every** screen shows Foxy, all on the **same frame**,
-      and there is **exactly one** audible audio stream
+- [ ] **Audio** is audible, and only one stream of it. Nothing automated can hear
+- [ ] With multiple monitors: every screen shows Foxy on the **same frame**
+      (coverage is automated; frame-identity is by eye)
 - [ ] **Mixed-DPI**: overlay covers each monitor exactly, no gaps or overhang.
-      Laptop panel plus an external display at different scaling is the case that
-      breaks — this is what `app.manifest`'s PerMonitorV2 and the
-      `TransformFromDevice` conversion exist for
-- [ ] Overlay does **not** steal focus — keep typing in another window while it
-      plays and confirm no keystrokes are lost
-- [ ] Overlay does not appear in Alt-Tab
+      Laptop panel plus an external display at different scaling. The arithmetic
+      is unit-tested; what is untested is whether Windows reports the bounds this
+      code expects under PerMonitorV2. Needs hardware with two scale factors
 - [ ] Overlay closes itself; the desktop is fully interactive afterwards
 - [ ] **Failsafe**: truncate `foxy.mp4` to a few bytes, fire, and confirm the window
       still closes. Three independent paths should cover it — `MediaEnded`,

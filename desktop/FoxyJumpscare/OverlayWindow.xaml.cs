@@ -4,6 +4,7 @@ using System.Windows.Controls;
 using System.Windows.Interop;
 using System.Windows.Media;
 using System.Windows.Threading;
+using FoxyJumpscare.Core;
 using FoxyJumpscare.Platform;
 using Forms = System.Windows.Forms;
 
@@ -80,11 +81,9 @@ public partial class OverlayWindow : Window
             .Select(s => s.Bounds)
             .ToList();
 
-        _virtualBounds = System.Drawing.Rectangle.FromLTRB(
-            screens.Min(s => s.Bounds.Left),
-            screens.Min(s => s.Bounds.Top),
-            screens.Max(s => s.Bounds.Right),
-            screens.Max(s => s.Bounds.Bottom));
+        var virt = ScreenMath.VirtualBounds(
+            screens.Select(s => (s.Bounds.Left, s.Bounds.Top, s.Bounds.Width, s.Bounds.Height)));
+        _virtualBounds = new System.Drawing.Rectangle(virt.Left, virt.Top, virt.Width, virt.Height);
 
         Player.Source = new Uri(videoPath);
         Player.MediaEnded += (_, _) => { Trace("MediaEnded"); CloseOnce(); };
@@ -127,27 +126,32 @@ public partial class OverlayWindow : Window
 
         // Screen bounds are physical pixels; WPF positions in device-independent
         // units. Without this conversion everything is mis-sized on a scaled
-        // display.
+        // display. The arithmetic lives in ScreenMath so it can be unit-tested
+        // against DPI combinations this machine does not have.
         var source = PresentationSource.FromVisual(this);
-        var toDip = source?.CompositionTarget?.TransformFromDevice ?? Matrix.Identity;
+        var toDevice = source?.CompositionTarget?.TransformToDevice ?? Matrix.Identity;
+        var scaleX = toDevice.M11 == 0 ? 1.0 : toDevice.M11;
+        var scaleY = toDevice.M22 == 0 ? 1.0 : toDevice.M22;
 
-        Point ToDip(int x, int y) => toDip.Transform(new Point(x, y));
+        var window = ScreenMath.ToDip(
+            _virtualBounds.Left, _virtualBounds.Top,
+            _virtualBounds.Width, _virtualBounds.Height,
+            0, 0, scaleX, scaleY);
 
-        var origin = ToDip(_virtualBounds.Left, _virtualBounds.Top);
-        var extent = ToDip(_virtualBounds.Width, _virtualBounds.Height);
-
-        Left = origin.X;
-        Top = origin.Y;
-        Width = extent.X;
-        Height = extent.Y;
+        Left = window.X;
+        Top = window.Y;
+        Width = window.Width;
+        Height = window.Height;
 
         // Everything inside the canvas is positioned relative to the window's
         // own top-left, which is the virtual desktop's top-left.
         Rect Local(System.Drawing.Rectangle bounds)
         {
-            var tl = ToDip(bounds.Left - _virtualBounds.Left, bounds.Top - _virtualBounds.Top);
-            var wh = ToDip(bounds.Width, bounds.Height);
-            return new Rect(tl.X, tl.Y, wh.X, wh.Y);
+            var r = ScreenMath.ToDip(
+                bounds.Left, bounds.Top, bounds.Width, bounds.Height,
+                _virtualBounds.Left, _virtualBounds.Top,
+                scaleX, scaleY);
+            return new Rect(r.X, r.Y, r.Width, r.Height);
         }
 
         var primaryRect = Local(_primaryBounds);
