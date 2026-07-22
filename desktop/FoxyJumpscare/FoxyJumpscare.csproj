@@ -1,0 +1,34 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <ItemGroup>
+    <ProjectReference Include="..\FoxyJumpscare.Core\FoxyJumpscare.Core.csproj" />
+  </ItemGroup>
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <UseWPF>true</UseWPF>
+    <!-- WinForms is here solely for NotifyIcon and Screen, which WPF has no
+         equivalents of. No WinForms UI is used. -->
+    <UseWindowsForms>true</UseWindowsForms>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <AssemblyName>FoxyJumpscare</AssemblyName>
+    <RootNamespace>FoxyJumpscare</RootNamespace>
+
+    <!-- WFAC010 tells WinForms apps to declare DPI via ApplicationHighDpiMode
+         instead of the manifest. That advice does not apply here: this is a WPF
+         app that never calls WinForms' Application.Run, and WPF reads its DPI
+         awareness from the manifest. Following the analyzer would leave the
+         overlay mis-sized on mixed-DPI displays. -->
+    <NoWarn>$(NoWarn);WFAC010</NoWarn>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Optional so the app builds before the asset pack exists. -->
+    <None Include="..\..\assets\foxy.mp4" Condition="Exists('..\..\assets\foxy.mp4')"
+          CopyToOutputDirectory="PreserveNewest" Link="foxy.mp4" />
+  </ItemGroup>
+
+</Project>
