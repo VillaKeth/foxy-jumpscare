@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "assets": "node tools/build-assets.mjs",
+    "build": "node tools/build-extension.mjs",
     "test": "vitest run"
   },
   "devDependencies": {
