@@ -190,19 +190,50 @@ misleading and an obvious flag during review.
 
 ## Firefox AMO
 
-1. Sign in at <https://addons.mozilla.org/developers/> — **free**.
-2. Submit a New Add-on → choose distribution:
-   - **On this site** for the public listing, or
-   - **On your own** for a signed XPI you host yourself. Mozilla still signs it,
-     and it installs normally in release Firefox. There is no Chrome equivalent,
-     and it is the better fallback if a listing is ever pulled.
-3. Upload `foxy-jumpscare-firefox-v0.1.0.zip`.
-4. The automated validator runs `addons-linter` — the same tool as
-   `npm run lint:firefox`, which is already clean, so this should pass without
-   comment.
-5. Fill in listing copy and screenshots. Set the same content rating warning
-   about sudden loud audio and flashing.
-6. Submit. Review is usually faster than Chrome's.
+Free, no developer fee. The one irreversible decision is the **add-on id**:
+`{47d51fee-cbcf-4204-b2b6-a2b72c965b26}` is claimed by whichever channel you submit
+to first, and an id cannot be moved between accounts.
+
+### First submission — the web UI
+
+The CLI cannot do this one, because a new listing needs metadata (screenshots,
+category, support contact) that `web-ext` has no way to supply.
+
+1. Sign in at <https://addons.mozilla.org/developers/>.
+2. **Submit a New Add-on** → choose distribution:
+   - **On this site** — the public listing.
+   - **On your own** — private signing. Same as `npm run sign:firefox`; see
+     `docs/install-firefox.md`.
+3. Upload `dist/packages/foxy-jumpscare-firefox-v0.1.0.zip`.
+4. Automated validation runs `addons-linter` — the same tool as
+   `npm run lint:firefox`, already clean, so this passes without comment.
+5. **Source code:** not required. The build copies plain, readable JavaScript;
+   nothing is minified, bundled, or transpiled. Only `manifest.json` is
+   generated. If a reviewer asks anyway, point them at the repository, or
+   re-submit with `web-ext sign --upload-source-code`.
+6. Fill in the listing copy above, plus:
+   - **Screenshots** — at least one. `$env:FOXY_CAPTURE=1; npx playwright test _demo`
+   - **Categories** — Fun, or Photos/Music/Videos.
+   - **Licence** — the code is yours; the video is not. See the warning at the
+     top of this file.
+   - **Support email** and, ideally, a repository link.
+7. Flag the content: sudden loud audio and a startle effect. Say it in the
+   description as well as any ratings field. This is the single most likely
+   source of angry reviews, and the honest warning is also the best defence.
+8. Submit. Listed reviews are usually hours to a couple of days — faster than
+   Chrome, and `<all_urls>` is less of a flashpoint on AMO.
+
+### Subsequent versions — one command
+
+```powershell
+# bump "version" in extension/manifest.base.json first
+npm run build
+npm run publish:firefox   # listed channel
+npm run sign:firefox      # or: private, unlisted
+```
+
+AMO refuses to sign a version number it has already seen, including one it
+rejected. Bump before every attempt.
 
 ---
 

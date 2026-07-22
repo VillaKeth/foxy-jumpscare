@@ -87,7 +87,13 @@ if (command === 'run') {
   process.exit(await run(['run', '--source-dir', DIST, '--firefox', firefox, '--no-reload']));
 }
 
-if (command === 'sign') {
+if (command === 'sign' || command === 'publish') {
+  // "sign" is private distribution: AMO signs it, it never appears on the
+  // site. "publish" pushes a version to the public listing. The first listed
+  // submission has to be made in the web UI, because it needs listing
+  // metadata - screenshots, category, support contact - that this CLI cannot
+  // supply. After that, this is the one-command update path.
+  const channel = command === 'publish' ? 'listed' : 'unlisted';
   const credentials = await readCredentials();
   if (!credentials) {
     die(
@@ -103,13 +109,16 @@ if (command === 'sign') {
   const { version } = JSON.parse(await readFile(join(DIST, 'manifest.json'), 'utf8'));
   await mkdir(ARTIFACTS, { recursive: true });
 
-  console.log(`\n  Signing v${version} as unlisted. AMO usually takes under a minute.\n`);
+  console.log(`\n  Submitting v${version} to the ${channel} channel.`);
+  console.log(channel === 'listed'
+    ? '  This goes to the public addons.mozilla.org listing.\n'
+    : '  Private: signed, but never shown on addons.mozilla.org.\n');
 
   const code = await run([
     'sign',
     '--source-dir', DIST,
     '--artifacts-dir', ARTIFACTS,
-    '--channel', 'unlisted',
+    '--channel', channel,
     '--api-key', credentials.apiKey,
     '--api-secret', credentials.apiSecret,
   ]);
@@ -123,10 +132,15 @@ if (command === 'sign') {
     );
   }
 
-  console.log(`\n  Signed .xpi is in ${ARTIFACTS}`);
-  console.log('  Install it by dragging it onto a Firefox window, or send it to someone.');
-  console.log('  See docs/install-firefox.md for what to tell them.\n');
+  if (channel === 'listed') {
+    console.log('\n  Uploaded. Finish the listing and submit for review at');
+    console.log('  https://addons.mozilla.org/developers/\n');
+  } else {
+    console.log(`\n  Signed .xpi is in ${ARTIFACTS}`);
+    console.log('  Install it by dragging it onto a Firefox window, or send it to someone.');
+    console.log('  See docs/install-firefox.md for what to tell them.\n');
+  }
   process.exit(0);
 }
 
-die('Usage: node tools/firefox-dist.mjs <run|sign>');
+die('Usage: node tools/firefox-dist.mjs <run|sign|publish>');
