@@ -1427,6 +1427,36 @@ git commit -m "docs: add Firefox manual verification checklist"
 
 **Known rough edge, flagged not hidden.** Task 5 Step 3 shows `func: injectOverlayFn` and then immediately corrects it to a `new Function` wrapper, because `executeScript` serialises the function and cannot pass `document`/`window` as arguments. Implement the wrapper version. The first form is shown only because the correction is the point — a plain `func: injectOverlayFn` silently receives `undefined` for `doc` and throws inside the page where it is awkward to see.
 
+## Corrections made during execution
+
+Executed 2026-07-22. One design decision in this plan was wrong.
+
+**The `new Function` injection wrapper does not work.** Task 5 specified passing
+`injectOverlayFn.toString()` into the page and rebuilding it with
+`new Function(...)`, so that `document` and `window` could be handed in as arguments.
+MV3 runs injected code in an isolated world governed by the **extension's** CSP, which
+has no `'unsafe-eval'`. The wrapper did not throw — it evaluated to `null`, so
+`attemptFire` reported failure on every page with nothing in the logs. All four
+injection end-to-end tests failed until this was found.
+
+Changes:
+
+- `injectOverlayFn(iframeUrl, failsafeMs)` now reads `document` and `window` as globals
+  instead of taking them as parameters.
+- `fire.mjs` passes `func: injectOverlayFn` directly to `executeScript`.
+- Unit tests swap `globalThis.document` / `globalThis.window` in `beforeEach` rather
+  than passing fakes as arguments.
+- Two regression tests added: one asserts no `new Function` wrapper reappears in the
+  injection path, one asserts the injector closes over no module-scope identifier
+  (which would throw a `ReferenceError` in the page rather than failing locally).
+
+**Diagnosis note.** The failure was invisible from the extension's own logs because
+`attemptFire` catches everything and returns false by design. It was found by probing
+`chrome.scripting.executeScript` directly from the service worker in a throwaway spec:
+a plain `func` returned its value, the `new Function` variant returned `null`. Worth
+remembering — a swallowed error in the fire path looks identical to a legitimately
+non-injectable page.
+
 ## Next
 
 Plan 3 (desktop WPF app) is not yet written. It shares no code with this plan — only the asset pack and the roll algorithm's definition.

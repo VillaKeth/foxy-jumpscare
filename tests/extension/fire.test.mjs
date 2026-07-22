@@ -1,0 +1,70 @@
+import { describe, it, expect, vi } from 'vitest';
+import { attemptFire } from '../../extension/src/lib/fire.mjs';
+
+function fakeBrowser({ tabs = [{ id: 7, url: 'https://example.com' }], executeScript } = {}) {
+  return {
+    tabs: { query: vi.fn(async () => tabs) },
+    scripting: { executeScript: executeScript ?? vi.fn(async () => [{ result: 'injected' }]) },
+    runtime: { getURL: (p) => `chrome-extension://abc/${p}` },
+  };
+}
+
+describe('attemptFire', () => {
+  it('injects into the active tab and reports success', async () => {
+    const browser = fakeBrowser();
+    expect(await attemptFire(browser)).toBe(true);
+    expect(browser.scripting.executeScript).toHaveBeenCalledOnce();
+
+    const call = browser.scripting.executeScript.mock.calls[0][0];
+    expect(call.target).toEqual({ tabId: 7 });
+    expect(typeof call.func).toBe('function');
+  });
+
+  it('passes the overlay URL through to the page', async () => {
+    const browser = fakeBrowser();
+    await attemptFire(browser);
+    const call = browser.scripting.executeScript.mock.calls[0][0];
+    expect(call.args).toContain('chrome-extension://abc/overlay.html');
+  });
+
+  it('passes the injector directly rather than through an eval wrapper', async () => {
+    // MV3 runs injected code under the extension's CSP, which has no
+    // 'unsafe-eval'. A new Function(...) wrapper evaluates to null instead of
+    // throwing, so the failure is silent - guard against reintroducing it.
+    const browser = fakeBrowser();
+    await attemptFire(browser);
+    const call = browser.scripting.executeScript.mock.calls[0][0];
+    expect(call.func.toString()).toMatch(/createElement/);
+    expect(call.func.toString()).not.toMatch(/new Function/);
+  });
+
+  it('does not inject into a privileged page, and reports failure', async () => {
+    const browser = fakeBrowser({ tabs: [{ id: 7, url: 'chrome://extensions' }] });
+    expect(await attemptFire(browser)).toBe(false);
+    expect(browser.scripting.executeScript).not.toHaveBeenCalled();
+  });
+
+  it('reports failure when there is no active tab', async () => {
+    const browser = fakeBrowser({ tabs: [] });
+    expect(await attemptFire(browser)).toBe(false);
+  });
+
+  it('reports failure when injection throws', async () => {
+    const browser = fakeBrowser({
+      executeScript: vi.fn(async () => { throw new Error('Cannot access contents'); }),
+    });
+    expect(await attemptFire(browser)).toBe(false);
+  });
+
+  it('reports failure when executeScript returns nothing usable', async () => {
+    const browser = fakeBrowser({ executeScript: vi.fn(async () => []) });
+    expect(await attemptFire(browser)).toBe(false);
+  });
+
+  it('treats an already-present overlay as success', async () => {
+    const browser = fakeBrowser({
+      executeScript: vi.fn(async () => [{ result: 'already-present' }]),
+    });
+    expect(await attemptFire(browser)).toBe(true);
+  });
+});
