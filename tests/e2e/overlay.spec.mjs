@@ -75,7 +75,10 @@ test('the shipped video actually carries alpha', async ({ context, extensionId }
     });
 
     v.pause();
-    v.currentTime = Math.min(0.4, v.duration / 2);
+    // Mid-clip: Foxy is large enough to be a real subject, but has not yet
+    // grown to fill the frame, so there is both something opaque to find and
+    // plenty of background that should have keyed out.
+    v.currentTime = v.duration * 0.5;
     await new Promise((r) => v.addEventListener('seeked', r, { once: true }));
 
     const c = document.createElement('canvas');
@@ -85,10 +88,40 @@ test('the shipped video actually carries alpha', async ({ context, extensionId }
     ctx.clearRect(0, 0, c.width, c.height);
     ctx.drawImage(v, 0, 0);
 
-    // The very corner of a keyed clip should be fully transparent.
-    const [r, g, b, a] = ctx.getImageData(2, 2, 1, 1).data;
-    return { r, g, b, a };
+    const data = ctx.getImageData(0, 0, c.width, c.height).data;
+    let clear = 0;
+    let solid = 0;
+    let green = 0;
+    for (let i = 0; i < data.length; i += 4) {
+      const a = data[i + 3];
+      if (a <= 2) clear += 1;
+      else if (a === 255) solid += 1;
+      // Surviving key colour: strong green, low red and blue, still visible.
+      if (a > 128 && data[i + 1] > 200 && data[i] < 80 && data[i + 2] < 80) green += 1;
+    }
+
+    const total = data.length / 4;
+    return {
+      clearPct: (100 * clear) / total,
+      solidPct: (100 * solid) / total,
+      greenPct: (100 * green) / total,
+      corner: [...ctx.getImageData(2, 2, 1, 1).data],
+      centre: [...ctx.getImageData(c.width >> 1, c.height >> 1, 1, 1).data],
+    };
   });
 
-  expect(sample.a).toBe(0);
+  // Most of the frame keyed out. Asserting a single corner pixel is exactly 0
+  // was the original test and it was wrong twice over: chromakey leaves a 1/255
+  // residue (0.4% opacity, invisible), and one pixel proves nothing about the
+  // key anyway.
+  expect(sample.clearPct).toBeGreaterThan(60);
+  expect(sample.corner[3]).toBeLessThanOrEqual(2);
+
+  // Foxy himself survived, fully opaque.
+  expect(sample.solidPct).toBeGreaterThan(5);
+  expect(sample.centre[3]).toBe(255);
+
+  // No meaningful green fringe left behind - the thing that looks worst
+  // against a dark page.
+  expect(sample.greenPct).toBeLessThan(0.5);
 });

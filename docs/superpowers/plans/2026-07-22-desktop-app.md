@@ -1160,4 +1160,32 @@ git commit -m "docs: add desktop release checklist"
 
 **Deliberate gap.** There are no automated UI tests. Everything testable without a desktop — the roll, the tick, persistence — is covered by xunit in `FoxyJumpscare.Core.Tests`. The overlay's real failure modes are DPI, focus stealing, and multi-monitor audio, none of which a headless test can observe. Task 6's checklist is the honest substitute, not an oversight.
 
+## Corrections made during execution
+
+Executed 2026-07-22. Two things in this plan were wrong.
+
+**Per-monitor video does not work.** The plan specified one overlay window per monitor
+with only the primary unmuted. WPF's `MediaElement` does not render reliably on a
+secondary monitor: its playback clock advances while presentation stalls. Measured on a
+dual 1920x1080 setup, the second screen held byte-identical frames for ~900ms of an
+880ms video. Two fixes were tried and discarded — showing all windows before playing
+any, then priming each player and holding until every `MediaOpened` fired. The second
+synchronised the clocks to within 3ms and changed nothing on screen, which is what
+proved the clocks were never the problem.
+
+Landed instead: the primary monitor plays the video, every other monitor gets a plain
+black window with no `MediaElement` at all. This sidesteps the renderer, makes
+overlapping audio structurally impossible rather than merely muted, and puts the scare
+on the screen the user is looking at. Recorded in `docs/desktop-checklist.md`.
+
+**`MediaOpened` fires after teardown.** `Player.Close()` raises a final `MediaOpened`,
+which armed a fresh failsafe timer on an already-closed window. Guarded with an
+`if (_closed) return;` in `ArmFailsafe`. Found only because the trace log showed two
+`MediaOpened` lines after `CloseOnce`.
+
+**Added, not in the plan.** A `--test-scare` command-line flag that fires once shortly
+after startup, so the overlay can be exercised without clicking a tray menu, and
+`FOXY_TRACE=1` which appends overlay timing to `%TEMP%\foxy-overlay.log`. The
+multi-monitor problem was not diagnosable without the latter.
+
 **Known rough edge, flagged.** Task 5 Step 3 arms the failsafe on `MediaOpened`, then immediately adds an unconditional hard stop in the constructor. Both are needed: the first scales to the actual video length, the second covers a file so broken that no media event fires at all. Implement both.

@@ -16,8 +16,9 @@ dotnet publish desktop/FoxyJumpscare -c Release -r win-x64 --self-contained fals
 - [ ] Tray icon appears; every menu item works; Quit exits with no orphan process
       (confirm in Task Manager — a surviving process keeps firing invisibly)
 - [ ] Test Scare plays fullscreen on the **primary** monitor with audio
-- [ ] With multiple monitors: an overlay on **each**, and **exactly one** audible
-      audio stream
+      (`FoxyJumpscare.exe --test-scare` fires once without touching the tray menu)
+- [ ] With multiple monitors: the video plays on the **primary** only, and every
+      other screen goes **solid black**. This is deliberate — see below.
 - [ ] **Mixed-DPI**: overlay covers each monitor exactly, no gaps or overhang.
       Laptop panel plus an external display at different scaling is the case that
       breaks — this is what `app.manifest`'s PerMonitorV2 and the
@@ -36,6 +37,28 @@ dotnet publish desktop/FoxyJumpscare -c Release -r win-x64 --self-contained fals
 - [ ] Changing rarity re-draws immediately (`state.json` → `Remaining` jumps)
 - [ ] First run of the published exe shows a SmartScreen warning; note the exact
       wording for the README
+
+## Why only the primary monitor plays the video
+
+WPF's `MediaElement` does not render reliably on a secondary monitor. Its playback
+clock advances normally while presentation stalls — measured on a dual 1920x1080
+setup, the second screen held byte-identical frames for ~900ms of an 880ms video
+while the primary played through cleanly.
+
+Two fixes were tried and rejected before landing on this one:
+
+1. Show all windows, then play them in one pass — no change; the clocks were
+   never the problem.
+2. Prime each player with Play/Pause and hold until every `MediaOpened` fired,
+   then start together. This did synchronise the clocks to within 3ms and
+   changed nothing on screen.
+
+Playing on the primary and blacking out the rest sidesteps the renderer entirely,
+makes overlapping audio structurally impossible rather than merely muted, and
+puts the scare on the screen the user is actually looking at.
+
+Set `FOXY_TRACE=1` to append overlay timing to `%TEMP%\foxy-overlay.log` if this
+ever needs revisiting.
 
 ## Known
 

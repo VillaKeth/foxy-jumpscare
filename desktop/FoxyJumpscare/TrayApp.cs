@@ -37,6 +37,16 @@ public sealed class TrayApp : IDisposable
         _timer = new Timer(TimeSpan.FromSeconds(_config.TickSeconds)) { AutoReset = true };
         _timer.Elapsed += OnTick;
         _timer.Start();
+
+        // --test-scare fires once shortly after startup, so the overlay can be
+        // exercised without clicking a tray menu. Used by the capture script
+        // and useful for checking a build on a machine you are sat at.
+        if (Environment.GetCommandLineArgs().Contains("--test-scare"))
+        {
+            var kick = new Timer(TimeSpan.FromMilliseconds(600)) { AutoReset = false };
+            kick.Elapsed += (_, _) => Fire();
+            kick.Start();
+        }
     }
 
     private void BuildTrayIcon()
