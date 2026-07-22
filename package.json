@@ -10,7 +10,9 @@
     "test:e2e": "playwright test",
     "lint:firefox": "addons-linter dist/firefox",
     "verify:firefox": "node tools/verify-firefox.mjs",
-    "verify:desktop": "pwsh -NoProfile -File tools/verify-desktop.ps1"
+    "verify:desktop": "pwsh -NoProfile -File tools/verify-desktop.ps1",
+    "icons": "node tools/make-icons.mjs",
+    "package": "node tools/package.mjs"
   },
   "devDependencies": {
     "@playwright/test": "^1.61.1",

@@ -43,3 +43,6 @@ playwright-report/
 Thumbs.db
 .DS_Store
 .idea/
+
+# --- build output ---
+dist/packages/
