@@ -1,0 +1,35 @@
+# Force LF in the working tree, not just in the repo.
+#
+# Not cosmetic. Git's default autocrlf on Windows checks source out with CRLF,
+# and esbuild (via vitest) throws "SyntaxError: Invalid or unexpected token" on
+# a CRLF file containing a non-ASCII character — while node itself parses the
+# same file fine. That combination made a green test suite fail immediately
+# after a branch checkout, with the error pointing at an innocent import line.
+* text=auto eol=lf
+
+*.mjs   text eol=lf
+*.js    text eol=lf
+*.json  text eol=lf
+*.md    text eol=lf
+*.html  text eol=lf
+*.css   text eol=lf
+*.yml   text eol=lf
+*.cs    text eol=lf
+*.csproj text eol=lf
+*.xaml  text eol=lf
+
+# Windows-native tooling expects CRLF in these.
+*.ps1   text eol=crlf
+*.cmd   text eol=crlf
+*.bat   text eol=crlf
+
+# Never touch media.
+*.mp4   binary
+*.webm  binary
+*.mov   binary
+*.png   binary
+*.jpg   binary
+*.wav   binary
+*.ogg   binary
+*.mp3   binary
+*.ico   binary
