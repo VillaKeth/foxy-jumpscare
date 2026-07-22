@@ -43,12 +43,13 @@ docs/         design specs
 Requires Node 24+, .NET 8 SDK, ffmpeg, git.
 
 ```powershell
+npm install
+
 # Assets — keys the greenscreen source into the two derived formats
-node tools/build-assets.mjs
+npm run assets
 
 # Extension -> dist/chrome, dist/firefox
-npm --prefix extension install
-npm --prefix extension run build
+npm run build
 
 # Desktop
 dotnet publish desktop/FoxyJumpscare -c Release

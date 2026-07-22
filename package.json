@@ -1,0 +1,13 @@
+{
+  "name": "foxy-jumpscare",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "assets": "node tools/build-assets.mjs",
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "vitest": "^3.2.4"
+  }
+}
