@@ -59,16 +59,21 @@ dotnet publish desktop/FoxyJumpscare -c Release -r win-x64 `
 ## Test
 
 ```powershell
-npm test          # 69 unit tests — roll, tick accounting, asset pipeline, manifests
-npm run test:e2e  # 6 Chromium end-to-end tests (opens a real browser window)
-dotnet test desktop/FoxyJumpscare.Core.Tests   # 24 tests
+npm test                # unit tests — roll, tick accounting, asset pipeline, manifests
+npm run test:e2e        # Chromium end-to-end (opens a real browser window)
+npm run lint:firefox    # addons-linter — the validator AMO runs on submission
+npm run verify:firefox  # behavioural checks in real Firefox, via web-ext
+dotnet test desktop/FoxyJumpscare.Core.Tests
 ```
 
-Two things are verified by hand rather than automated, and the reasons are real
-rather than laziness — see [`docs/firefox-checklist.md`](docs/firefox-checklist.md)
-(Playwright cannot load MV3 extensions in Firefox) and
-[`docs/desktop-checklist.md`](docs/desktop-checklist.md) (DPI, focus stealing, and
-multi-monitor audio are invisible to a headless test).
+Both browsers are verified automatically, including the two things that differ
+between them and cannot be checked with ffmpeg: whether audio survives autoplay
+policy, and whether VP9 alpha actually renders transparent. See
+[`docs/firefox-checklist.md`](docs/firefox-checklist.md).
+
+The desktop app's remaining checks are genuinely manual — DPI, focus stealing and
+multi-monitor behaviour are invisible to a headless test. See
+[`docs/desktop-checklist.md`](docs/desktop-checklist.md).
 
 Drop the greenscreen source into `assets/` first, per
 [`assets/PACK.md`](assets/PACK.md) — every build expects the derived files.

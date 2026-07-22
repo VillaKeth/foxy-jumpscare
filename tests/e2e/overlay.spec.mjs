@@ -26,6 +26,24 @@ test('injects into a page with a strict CSP', async ({ context, worker }) => {
   await expect(page.locator(SENTINEL)).toBeAttached();
 });
 
+test('fires across every tab, not just the active one', async ({ context, worker }) => {
+  // Scoped to the active tab, the scare silently did nothing whenever you were
+  // on a restricted page, and did not follow you if you switched tabs.
+  const a = await context.newPage();
+  await a.goto('/plain.html');
+  const b = await context.newPage();
+  await b.goto('/demo.html');
+  const c = await context.newPage();
+  await c.goto('/strict-csp.html');
+
+  const fired = await worker.evaluate(() => globalThis.__foxyTest.fireNow());
+  expect(fired).toBe(true);
+
+  await expect(a.locator(SENTINEL)).toBeAttached();
+  await expect(b.locator(SENTINEL)).toBeAttached();
+  await expect(c.locator(SENTINEL)).toBeAttached();
+});
+
 test('does not double-inject', async ({ context, worker }) => {
   const page = await context.newPage();
   await page.goto('/plain.html');
@@ -36,12 +54,27 @@ test('does not double-inject', async ({ context, worker }) => {
   await expect(page.locator(SENTINEL)).toHaveCount(1);
 });
 
-test('refuses to fire on a privileged page and keeps the roll', async ({ context, worker }) => {
-  const page = await context.newPage();
-  await page.goto('chrome://version');
+test('still fires when every tab is privileged, via a standalone window', async ({ context, worker }) => {
+  // Previously this refused and kept the roll. That meant sitting on
+  // about:config or a PDF made the extension silently do nothing. It now falls
+  // back to its own window so the scare still lands - it just cannot be
+  // transparent there.
+  // Navigate rather than close: closing the last page tears down the
+  // persistent context the extension is loaded into.
+  const existing = context.pages();
+  if (existing.length === 0) await context.newPage();
+  for (const page of context.pages()) {
+    await page.goto('chrome://version').catch(() => {});
+  }
 
   const fired = await worker.evaluate(() => globalThis.__foxyTest.fireNow());
-  expect(fired).toBe(false);
+  expect(fired).toBe(true);
+
+  const overlayWindow = await context.waitForEvent('page', {
+    predicate: (p) => p.url().includes('overlay.html'),
+    timeout: 10_000,
+  });
+  expect(overlayWindow.url()).toContain('overlay.html');
 });
 
 test('the overlay tears itself down', async ({ context, worker }) => {

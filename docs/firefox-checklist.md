@@ -1,49 +1,56 @@
-# Firefox release checklist
+# Firefox verification
 
-Firefox is a fully supported target — `dist/firefox` builds and runs. What is not
-automated here is *behavioural* testing: Playwright exposes no API for loading an
-extension in Firefox, unlike Chromium's `--load-extension`. Other tools can —
-Mozilla's `web-ext`, or Selenium's `installAddon` — they are simply not wired up
-yet. That is a gap in this repo's tooling, not a limitation of the extension.
-
-What **is** automated:
+Firefox is a fully supported target and is now verified automatically.
 
 ```powershell
-npm run lint:firefox    # addons-linter — the same validator AMO runs on submission
+npm run lint:firefox      # addons-linter — the validator AMO runs on submission
+npm run verify:firefox    # behavioural checks in real Firefox
 ```
 
-It reports **0 errors, 0 warnings, 0 notices**, and it covers the whole class of
-manifest, permission and API-compatibility problems. It caught three real ones:
-a missing `data_collection_permissions` declaration, and `options_page` being
-unsupported below Firefox 126 — switched to `options_ui`, which works on both
-browsers.
+## What is automated
 
-The list below is what the linter cannot see: whether it actually behaves.
+`npm run lint:firefox` reports **0 errors, 0 warnings, 0 notices**. It covers
+manifest, permission and API-compatibility problems, and caught three real ones:
+a missing `data_collection_permissions` declaration, `options_page` being
+unsupported below Firefox 126 (switched to `options_ui`), and a
+`strict_min_version` too low for the keys being declared.
 
-Load `dist/firefox` via `about:debugging` → This Firefox → Load Temporary Add-on
-→ select `manifest.json`.
+`npm run verify:firefox` drives real Firefox via Mozilla's `web-ext`, which
+installs the extension as a temporary add-on. A throwaway copy of `dist/firefox`
+is patched with probes that report back to a local collector, so nothing depends
+on reading the screen. Checks:
 
-## Checks
+- extension fired
+- overlay iframe injected, with the right `z-index` and `allow="autoplay"`
+- VP9 video decoded
+- playing, not blocked
+- **audio not muted** — the biggest Chrome/Firefox divergence, since Firefox
+  handles autoplay delegation to cross-origin iframes differently
+- **transparency present** — Firefox's VP9 alpha implementation is separate from
+  Chromium's, so this is checked independently rather than assumed
+- no green fringe
 
-- [ ] Loads with no manifest warnings in `about:debugging`
-- [ ] Background script console shows no exceptions
-- [ ] `__foxyTest.fireNow()` from the background console returns `true` and injects
-- [ ] Overlay appears on an ordinary page (example.com)
-- [ ] Overlay appears on a **strict-CSP** page (github.com)
-- [ ] **Audio is audible.** This is the single biggest Chrome/Firefox divergence in
-      the design — the iframe's `allow="autoplay"` is what carries it, and Firefox
-      honours autoplay delegation differently from Chrome
-- [ ] Foxy renders **with transparency**; the page is visible behind him. Firefox
-      and Chrome both support VP9 alpha in WebM, but they are separate
-      implementations and only one of them is covered by automated tests
-- [ ] No green fringe against a light page **and** against a dark page
-- [ ] Overlay disappears on its own and the page is fully interactive afterwards
-- [ ] Overlay does not intercept clicks while visible (`pointer-events: none`)
-- [ ] Options page saves and reloads correctly
-- [ ] Changing rarity visibly resets `remaining` in `about:debugging` → Storage
+Last run on Firefox 153: all pass, 83.3% of the frame keyed clear, 0% green.
 
-## Notes
+### Why not Playwright
 
-`chrome.*` is used directly rather than `browser.*`. Firefox aliases `chrome.*`
-for MV3 compatibility, so this works — but if a call ever behaves differently
-between the two, that alias is the first place to look.
+Playwright exposes no API for loading an extension in Firefox, unlike Chromium's
+`--load-extension`. `web-ext` is Mozilla's own tool and does it properly.
+
+### Note if this ever breaks
+
+Both the repo path and Firefox's install path usually contain spaces. `web-ext`'s
+`.bin` shim is a `.cmd` on Windows, which requires `shell: true`, and a shell
+concatenates arguments unescaped — which silently tears the command apart. The
+script therefore runs `node node_modules/web-ext/bin/web-ext.js` directly with no
+shell. Do not "simplify" it back to the shim.
+
+## Still manual
+
+Nothing behavioural, but worth an eyeball before an AMO submission:
+
+- [ ] Install from a built XPI rather than a temporary add-on, and confirm it
+      survives a browser restart
+- [ ] Options page renders correctly and saves (embedded via `options_ui`)
+- [ ] The install prompt's permission wording is acceptable — `<all_urls>` reads
+      alarmingly, and the listing should explain why it is needed

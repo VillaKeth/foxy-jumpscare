@@ -8,11 +8,13 @@
     "build": "node tools/build-extension.mjs",
     "test": "vitest run",
     "test:e2e": "playwright test",
-    "lint:firefox": "addons-linter dist/firefox"
+    "lint:firefox": "addons-linter dist/firefox",
+    "verify:firefox": "node tools/verify-firefox.mjs"
   },
   "devDependencies": {
     "@playwright/test": "^1.61.1",
     "addons-linter": "^10.9.0",
-    "vitest": "^3.2.4"
+    "vitest": "^3.2.4",
+    "web-ext": "^10.5.0"
   }
 }
