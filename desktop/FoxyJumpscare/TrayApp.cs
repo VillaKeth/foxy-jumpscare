@@ -20,6 +20,10 @@ public sealed class TrayApp : IDisposable
     public void Start()
     {
         _config = Store.LoadConfig(_dir);
+        // Write it straight back, so the file exists and is editable after a
+        // first run rather than only appearing once a menu item is touched.
+        Store.SaveConfig(_dir, _config);
+
         _state = Store.LoadState(_dir);
 
         if (_state.Remaining <= 0)
@@ -119,7 +123,20 @@ public sealed class TrayApp : IDisposable
 
     private void Fire()
     {
-        Debug.WriteLine("[foxy] would fire (overlay not wired yet)");
+        var video = Path.Combine(AppContext.BaseDirectory, "foxy.mp4");
+        if (!File.Exists(video))
+        {
+            Debug.WriteLine($"[foxy] no video at {video} - run npm run assets");
+            return;
+        }
+
+        // Timer callbacks run on a pool thread; WPF windows must be created on
+        // the UI thread.
+        Application.Current.Dispatcher.Invoke(
+            () => OverlayWindow.ShowAll(video, _config.FailsafeMarginMs));
+
+        _state.Remaining = Roll.DrawRemaining(_config.OneInN);
+        Store.SaveState(_dir, _state);
     }
 
     public void Dispose()
