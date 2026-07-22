@@ -32,7 +32,9 @@ is a rebuild, not a rewrite — see `assets/PACK.md`.
    pack swap is a single command. This is the one worth taking seriously.
 3. Don't publish publicly. Firefox supports self-hosted signed XPI, and Chrome
    supports unlisted listings shared by direct link, both of which reach friends
-   without a public storefront.
+   without a public storefront. **This is the path that is actually wired up** —
+   `npm run sign:firefox`, documented in `docs/install-firefox.md`. It needs a
+   free AMO account, no review, and no fee.
 
 Nothing below assumes which you pick.
 
@@ -84,8 +86,10 @@ both stores reject a version that already exists.
 > browser is in the background, while your machine is idle, or while your screen
 > is locked.
 >
-> Rarity is configurable: Ultra-rare (~10 weeks), Rare (~3 weeks), Normal
-> (~1 week), or Terraria-faithful (~17 hours) if you want to actually see it.
+> Rarity is configurable from the toolbar button: Ultra-rare (~10 weeks), Rare
+> (~3 weeks), Normal (~1 week), Terraria-faithful (~17 hours), or any 1-in-N you
+> care to type. There is also a Test button, if you would rather see it once on
+> your own terms than be ambushed.
 >
 > WARNING: This is a sudden loud video with a scream, by design. Do not install
 > it if you are photosensitive, and think carefully about headphones.

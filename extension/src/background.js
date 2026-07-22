@@ -64,6 +64,23 @@ chrome.alarms.onAlarm.addListener((alarm) => {
 });
 
 /**
+ * "Test it now", from the toolbar panel.
+ *
+ * Note what this does *not* do: it never touches `remaining`. A test must not
+ * spend the real roll, and a test that fails to inject must not spend it
+ * either. The countdown is the same before and after, whatever happens here.
+ */
+chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+  if (message?.type !== 'foxy:test-fire') return undefined;
+
+  attemptFire(chrome).then(
+    (fired) => sendResponse({ fired }),
+    (err) => sendResponse({ fired: false, error: String(err) })
+  );
+  return true; // keep the message channel open for the async reply
+});
+
+/**
  * Reachable only from the service-worker context - devtools, or Playwright via
  * context.serviceWorkers(). A web page cannot touch the worker's global scope,
  * so this is not an escape hatch for hostile sites. Used by the end-to-end

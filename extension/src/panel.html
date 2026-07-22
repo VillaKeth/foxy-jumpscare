@@ -1,0 +1,90 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Foxy Jumpscare</title>
+<style>
+  :root {
+    color-scheme: light dark;
+    --fg: #1a1114; --bg: #ffffff; --muted: #5a5560;
+    --accent: #be3a1a; --line: #dedade;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --fg: #ece7e9; --bg: #1c1a1d; --muted: #a09aa4; --line: #3a363c; }
+  }
+
+  body {
+    font: 14px/1.5 system-ui, sans-serif;
+    margin: 0; padding: 14px;
+    min-width: 300px; max-width: 32rem;
+    color: var(--fg); background: var(--bg);
+  }
+  h1 { font-size: 1.05rem; margin: 0; }
+  .sub { color: var(--muted); font-size: .85em; margin: 2px 0 14px; }
+
+  .row { display: flex; align-items: center; gap: 8px; margin: 12px 0; }
+  .field { display: block; margin: 12px 0; }
+  .field > span { display: block; font-size: .85em; color: var(--muted); margin-bottom: 4px; }
+
+  select, input[type=number] {
+    font: inherit; width: 100%; box-sizing: border-box;
+    padding: 5px 6px; border: 1px solid var(--line); border-radius: 5px;
+    background: var(--bg); color: var(--fg);
+  }
+
+  button {
+    font: inherit; width: 100%; padding: 7px 10px;
+    border: 0; border-radius: 5px;
+    background: var(--accent); color: #fff; cursor: pointer;
+  }
+  button:hover:not(:disabled) { filter: brightness(1.12); }
+  button:disabled { opacity: .55; cursor: default; }
+
+  .countdown {
+    border-top: 1px solid var(--line);
+    margin-top: 14px; padding-top: 10px;
+    font-size: .85em; color: var(--muted);
+  }
+  .countdown b { color: var(--fg); font-size: 1.2em; }
+
+  .status { min-height: 1.4em; margin: 8px 0; font-size: .85em; color: var(--accent); }
+  .warn {
+    color: var(--muted); font-size: .8em;
+    border-left: 2px solid var(--accent); padding-left: 8px; margin: 12px 0 0;
+  }
+  .hidden { display: none; }
+</style>
+
+<h1>Foxy Jumpscare</h1>
+<p class="sub" id="odds-note">&nbsp;</p>
+
+<div class="row">
+  <input type="checkbox" id="enabled">
+  <label for="enabled">Enabled</label>
+</div>
+
+<label class="field">
+  <span>Rarity</span>
+  <select id="odds">
+    <option value="ultra-rare">Ultra-rare</option>
+    <option value="rare">Rare</option>
+    <option value="normal">Normal</option>
+    <option value="terraria-faithful">Terraria-faithful</option>
+    <option value="custom">Custom&hellip;</option>
+  </select>
+</label>
+
+<label class="field hidden" id="custom-field">
+  <span>1 in N, per second of active browsing</span>
+  <input type="number" id="custom" min="1" max="100000000" step="1">
+</label>
+
+<div class="countdown">
+  Next one in about <b id="remaining">&mdash;</b> of active browsing.
+</div>
+
+<p class="status" id="status"></p>
+
+<button id="test">Test it now</button>
+
+<p class="warn">Sudden loud video and audio, by design.</p>
+
+<script src="panel.js" type="module"></script>

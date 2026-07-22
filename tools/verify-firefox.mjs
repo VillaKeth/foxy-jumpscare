@@ -14,45 +14,17 @@
  * Needs:  npm run build, npm run assets, and Firefox installed.
  */
 import { createServer } from 'node:http';
-import { spawn, execFile } from 'node:child_process';
+import { spawn } from 'node:child_process';
 import { readFile, writeFile, appendFile, rm, mkdtemp, cp, access } from 'node:fs/promises';
 import { join, dirname, resolve, extname } from 'node:path';
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
-import { promisify } from 'node:util';
+import { findFirefox } from './lib/find-firefox.mjs';
 
-const execFileAsync = promisify(execFile);
 const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const PORT = 8393;
 const PAGES = join(REPO_ROOT, 'tests', 'e2e', 'pages');
 const DIST = join(REPO_ROOT, 'dist', 'firefox');
-
-/** Firefox is commonly a per-user install, so the registry is the reliable source. */
-async function findFirefox() {
-  const key = String.raw`HKCU\SOFTWARE\Microsoft\Windows\CurrentVersion\App Paths\firefox.exe`;
-  const keys = [key, key.replace('HKCU', 'HKLM')];
-
-  for (const k of keys) {
-    try {
-      const { stdout } = await execFileAsync('reg', ['query', k, '/ve']);
-      const match = stdout.match(/REG_SZ\s+(.+\.exe)/i);
-      if (match) return match[1].trim();
-    } catch { /* try the next one */ }
-  }
-
-  for (const guess of [
-    'C:/Program Files/Mozilla Firefox/firefox.exe',
-    'C:/Program Files (x86)/Mozilla Firefox/firefox.exe',
-    join(process.env.LOCALAPPDATA ?? '', 'Mozilla Firefox', 'firefox.exe'),
-  ]) {
-    try {
-      await access(guess);
-      return guess;
-    } catch { /* keep looking */ }
-  }
-
-  return null;
-}
 
 /** Appended to the copied build. Never shipped. */
 const BACKGROUND_PROBE = `

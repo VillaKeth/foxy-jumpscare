@@ -10,6 +10,8 @@
     "test:e2e": "playwright test",
     "lint:firefox": "addons-linter dist/firefox",
     "verify:firefox": "node tools/verify-firefox.mjs",
+    "dev:firefox": "node tools/firefox-dist.mjs run",
+    "sign:firefox": "node tools/firefox-dist.mjs sign",
     "verify:desktop": "pwsh -NoProfile -File tools/verify-desktop.ps1",
     "icons": "node tools/make-icons.mjs",
     "package": "node tools/package.mjs"

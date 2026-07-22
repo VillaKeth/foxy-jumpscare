@@ -34,6 +34,12 @@ dist/
 .claude/_archive-wellnessscape/
 .claude/settings.local.json
 
+# --- Credentials ---
+# AMO signing key/secret. Anyone holding these can publish updates under our
+# add-on id, which is a supply-chain problem, not an inconvenience.
+.amo-credentials.json
+web-ext-artifacts/
+
 # --- Tooling scratch ---
 .playwright-mcp/
 test-results/

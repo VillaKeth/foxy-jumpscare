@@ -39,7 +39,19 @@ describe('manifestFor', () => {
     // strict_min_version. options_ui works on both browsers.
     const m = manifestFor('chrome', BASE);
     expect(m.options_page).toBeUndefined();
-    expect(m.options_ui).toEqual({ page: 'options.html', open_in_tab: false });
+    expect(m.options_ui).toEqual({ page: 'panel.html', open_in_tab: false });
+  });
+
+  it('puts the same panel behind the toolbar button', () => {
+    // The toolbar popup is the primary UI - about:addons -> Preferences is
+    // several clicks deep and most people never find it. Both entry points
+    // load one page so the two cannot drift apart.
+    for (const target of ['chrome', 'firefox']) {
+      const m = manifestFor(target, BASE);
+      expect(m.action.default_popup).toBe('panel.html');
+      expect(m.action.default_popup).toBe(m.options_ui.page);
+      expect(m.action.default_icon['16']).toBe('icons/icon-16.png');
+    }
   });
 
   it('does not leak the gecko block into the Chrome manifest', () => {
