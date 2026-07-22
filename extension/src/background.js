@@ -1,5 +1,6 @@
 import { drawRemaining, DEFAULT_ONE_IN_N } from './lib/roll.mjs';
 import { TICK_SECONDS, creditTick } from './lib/ticker.mjs';
+import { attemptFire } from './lib/fire.mjs';
 
 const ALARM = 'foxy-tick';
 const IDLE_THRESHOLD_SECONDS = 15;
@@ -37,7 +38,12 @@ async function tick() {
   await chrome.storage.local.set({ remaining, oneInN: state.oneInN, enabled: state.enabled });
 
   if (shouldFire) {
-    console.log('[foxy] would fire (overlay not wired yet)');
+    const fired = await attemptFire(chrome);
+    if (fired) {
+      await chrome.storage.local.set({ remaining: drawRemaining(state.oneInN) });
+    }
+    // If it did not fire, remaining stays 0 and the next tick retries. The
+    // roll is only spent on an overlay the user actually saw.
   }
 }
 
@@ -56,3 +62,15 @@ chrome.runtime.onStartup.addListener(scheduleAlarm);
 chrome.alarms.onAlarm.addListener((alarm) => {
   if (alarm.name === ALARM) tick();
 });
+
+/**
+ * Reachable only from the service-worker context - devtools, or Playwright via
+ * context.serviceWorkers(). A web page cannot touch the worker's global scope,
+ * so this is not an escape hatch for hostile sites. Used by the end-to-end
+ * tests to fire on demand instead of waiting out a week-long countdown.
+ */
+globalThis.__foxyTest = {
+  fireNow: () => attemptFire(chrome),
+  setRemaining: (remaining) => chrome.storage.local.set({ remaining }),
+  tickNow: () => tick(),
+};
