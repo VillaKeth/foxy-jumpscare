@@ -46,3 +46,29 @@ test('capture the overlay firing', async ({ context, worker }) => {
 
   console.log(`captured to ${dir}`);
 });
+
+/** The settings panel, which a store listing should show alongside the scare. */
+test('capture the panel', async ({ context, worker, extensionId }) => {
+  test.skip(process.env.FOXY_CAPTURE !== '1', 'capture run only — set FOXY_CAPTURE=1');
+
+  await mkdir('docs/screenshots', { recursive: true });
+
+  const panel = await context.newPage();
+  // Render at the width Firefox actually gives a popup. In a 1280px viewport
+  // the body sits at its 32rem max instead, and the odds line gets clipped.
+  await panel.setViewportSize({ width: 360, height: 400 });
+  await panel.goto(`chrome-extension://${extensionId}/panel.html`);
+  await panel.waitForFunction(() => document.getElementById('odds-note').textContent.includes('1 in'));
+
+  // Seed *after* the panel is open, so onInstalled's own draw cannot land on
+  // top of it. The panel picks this up through its storage.onChanged listener,
+  // which keeps the screenshot from showing whatever random number came up.
+  await worker.evaluate(() =>
+    chrome.storage.local.set({ oneInN: 100_000, remaining: 320_400, enabled: true })
+  );
+  await panel.waitForFunction(
+    () => document.getElementById('remaining').textContent === '3d 17h'
+  );
+
+  await panel.screenshot({ path: 'docs/screenshots/05-panel.png', fullPage: true });
+});
