@@ -1,0 +1,237 @@
+# Foxy Jumpscare — Design
+
+**Date:** 2026-07-22
+**Status:** Approved, ready for implementation planning
+
+## Summary
+
+Port the Terraria "Foxy jumpscare" mod out of the game and onto the whole computer.
+Two deliverables sharing one asset pack and one roll algorithm:
+
+1. **Browser extension** — MV3, published to the Chrome Web Store and Firefox AMO.
+   Fires inside the active tab.
+2. **Windows desktop app** — C# .NET 8 tray app. Fires over whatever you're doing,
+   regardless of application.
+
+Both roll once per *active* second at a configurable 1-in-N, matching the original
+mod's semantics exactly.
+
+## Background: what the original actually does
+
+The reference mod is **"1/10000 Chance for Withered Foxy Jumpscare Every Second"**
+by **yonsan (YMY)**, for Terraria via tModLoader
+([Steam Workshop](https://steamcommunity.com/sharedfiles/filedetails/?id=3481943642)).
+
+Two corrections to common assumptions, both verified against the listing:
+
+- The unit is a **wall-clock second**, not a game tick and not a rendered frame.
+  One Bernoulli trial per second of game runtime.
+- The odds are **1/10,000**, not 1/100,000. The larger number is drift introduced by
+  the ports to [Minecraft](https://modrinth.com/mod/one-in-ten-thousand-110000-chance-for-withered-foxy-jumpscare),
+  [GTFO](https://thunderstore.io/c/gtfo/p/AuriRex/Foxy_Jumpscare/), and
+  [PEAK](https://thunderstore.io/c/peak/p/Citroos/Random_Jumpscares/).
+- Both the interval and the chance are user-configurable in the original. We match that.
+
+At 1/10,000 per second the mean wait is **2h46m** of play and the median is **1h55m** —
+which is why it reads as "relatively frequent" despite the large-sounding denominator.
+
+## Decisions
+
+| Question | Decision |
+|---|---|
+| Assets | Real FNAF Withered Foxy sprite + scream. Swappable pack; untracked in git. |
+| Target frequency | ~1–2 weeks for a typical user |
+| Roll unit | One trial per **active** second (faithful to the original) |
+| Desktop clock gating | Only while actively using the PC — recent input, session unlocked |
+| Presentation | Fullscreen, ~1.5s, auto-dismiss, no input blocking, no forced volume |
+| Desktop stack | C# / .NET 8 WinForms |
+| Repo | Public code, assets gitignored |
+
+### Derived defaults
+
+| | N (1 in N per active sec) | Expected wait |
+|---|---|---|
+| Extension | **100,000** | ~7 days @ 4h/day browsing |
+| Desktop | **300,000** | ~10 days @ 8h/day at the PC |
+| Both (preset) | 10,000 | "Terraria faithful" — ~2h46m |
+
+## Shared core: the roll
+
+### Why not `setInterval(1000)`
+
+A literal per-second timer is wrong on both platforms. Browsers throttle background
+timers, MV3 service workers are killed after ~30s idle, and Windows timers drift
+across sleep and hibernation. A dropped tick silently biases the odds.
+
+### The algorithm
+
+Sample the wait **once** from the equivalent geometric distribution, then count down
+against measured active time. Statistically identical to rolling 1/N every second,
+but correct under a coarse and unreliable timer.
+
+For `p = 1/N` and `U ~ Uniform(0,1]`:
+
+```
+remaining = max(1, ceil( ln(U) / ln(1 - p) ))
+```
+
+This is inverse-transform sampling of `X ~ Geometric(p)` on support `{1, 2, ...}`,
+with `E[X] = 1/p = N`.
+
+Implementation notes:
+
+- `Math.random()` / `Random.NextDouble()` both return `[0, 1)`. Use `1 - rand()` to get
+  `(0, 1]`, and clamp the result to `>= 1` for the `U == 1` case where `ln(1) == 0`.
+- `remaining` is **persisted**. It survives browser restart, service-worker death,
+  and reboot. (The geometric distribution is memoryless, so resampling on restart
+  would also be unbiased — persisting is about not needing a live 1 Hz timer.)
+- On fire, draw a fresh `remaining`.
+
+### Active-time accounting
+
+A coarse tick credits `T` seconds of active time when the tick observes an active
+state. This samples rather than integrates, so it slightly overcounts a user who
+goes idle mid-window. The error is bounded by `T` per tick and is acceptable at
+these magnitudes; it is not corrected in v1.
+
+| | Tick period | "Active" means |
+|---|---|---|
+| Extension | 60s (`chrome.alarms` minimum on Chrome) | `chrome.idle.queryState(15) === 'active'` **and** a browser window has focus |
+| Desktop | 30s | `GetLastInputInfo` reports input within 60s **and** session not locked |
+
+The extension's focus check is load-bearing: `chrome.idle` measures *system* idle, so
+without it a user working in another app all day with Chrome open in the background
+would accrue "browsing" seconds they never spent.
+
+## Component: browser extension
+
+One source tree, two build outputs. `webextension-polyfill` for API parity;
+`tools/build.mjs` templates the manifest and emits `dist/chrome/` and `dist/firefox/`.
+
+### Behavior
+
+- `chrome.alarms` at 1-minute period drives the tick. Not `setTimeout` — the service
+  worker will not be alive to receive it.
+- On fire, `chrome.scripting.executeScript` injects the overlay into the active tab:
+  a `position: fixed; inset: 0; z-index: 2147483647` container holding the image,
+  removed after 1500ms. Guarded by a sentinel element id so it can never double-inject.
+- Audio plays from a **Chrome offscreen document**. Content-script audio is subject to
+  the page's autoplay policy and is silently blocked on any page the user hasn't
+  interacted with. Firefox has no offscreen API and falls back to content-script
+  audio, where it will occasionally be silent — a known, accepted platform difference.
+
+### Constraints
+
+- Not injectable into `chrome://`, `about:`, the extension stores, the PDF viewer, or
+  blank tabs. **When injection fails the roll is not consumed** — `remaining` stays at
+  0 and it retries on the next tick. Without this the odds quietly skew against users
+  who sit on restricted pages.
+- Requires the `<all_urls>` host permission. Unavoidable for inject-anywhere behavior;
+  it means a scarier install prompt and slower store review.
+- Permissions: `alarms`, `idle`, `storage`, `scripting`, `offscreen`, host `<all_urls>`.
+
+### Options page
+
+Minimal, because store users expect one: an enable toggle and an odds dropdown,
+persisted to `chrome.storage.local`. Changing the odds re-draws `remaining`.
+
+The same four presets are offered in the desktop tray menu, so the two apps stay
+comparable. Expected waits differ because the clocks differ (4h/day browsing vs
+8h/day at the PC).
+
+| Preset | N | Extension wait | Desktop wait |
+|---|---|---|---|
+| Ultra-rare | 1,000,000 | ~69 days | ~35 days |
+| Rare | 300,000 | ~21 days | ~10 days *(desktop default)* |
+| Normal | 100,000 | ~7 days *(extension default)* | ~3.5 days |
+| Terraria-faithful | 10,000 | ~17 hours | ~8 hours |
+
+### Publishing
+
+- **Chrome Web Store** — $5 one-time developer fee, 1–3 day review, requires a privacy
+  policy URL and a written justification for each permission.
+- **Firefox AMO** — free, faster review, and additionally supports self-hosted signed
+  XPI, which is the fallback distribution channel if the listing is ever pulled.
+- The listing must describe the behavior plainly. A jumpscare extension that says it
+  is a jumpscare extension is within policy; one that conceals it is not.
+- First-run page carries a photosensitivity and volume warning.
+
+## Component: Windows desktop app
+
+.NET 8, `net8.0-windows`, WinForms, single-file publish.
+
+- **Tray menu:** Enabled · Odds · Test Scare · Run at startup · Quit
+- **Idle gating:** `GetLastInputInfo` P/Invoke; `SystemEvents.SessionSwitch` suppresses
+  the clock while the session is locked.
+- **Overlay:** one borderless `Form` **per monitor** (`Screen.AllScreens`), `TopMost`,
+  `ShowInTaskbar = false`, bounds set to the screen. `CreateParams` sets
+  `WS_EX_NOACTIVATE` and `ShowWithoutActivation` returns true, so it never steals
+  focus or swallows keystrokes. `PictureBox` in `Zoom` mode on black.
+- **Audio:** `System.Media.SoundPlayer`, hence WAV — zero external dependency.
+- **Teardown:** 1500ms timer closes the overlays. A **separate 3000ms failsafe timer**
+  force-disposes every overlay unconditionally. A bug in the normal path must never be
+  able to leave the user staring at an un-closable fullscreen window.
+- **Autostart:** off by default, opt-in from the tray, written to
+  `HKCU\Software\Microsoft\Windows\CurrentVersion\Run`.
+
+### Config and state
+
+`%APPDATA%\FoxyJumpscare\config.json`:
+
+| Key | Default |
+|---|---|
+| `enabled` | `true` |
+| `oneInN` | `300000` |
+| `tickSeconds` | `30` |
+| `idleThresholdSeconds` | `60` |
+| `durationMs` | `1500` |
+| `failsafeMs` | `3000` |
+| `runAtStartup` | `false` |
+
+`state.json` holds `remaining` alongside it.
+
+### Expected friction
+
+The exe is unsigned, and "resident tray process + `Run` key + fullscreen topmost
+overlay" is close to the behavior profile antivirus heuristics watch for. Expect a
+SmartScreen prompt on first run. Code signing is out of scope for v1.
+
+## Assets
+
+`assets/` is a swappable pack — image, audio, and a small manifest describing them.
+Neither app hardcodes anything about the contents. If the store build has to switch to
+original art, that is a pack swap and a re-upload, not a code change.
+
+The files themselves are gitignored (see `.gitignore`); `assets/PACK.md` documents the
+expected filenames and formats so the pack can be reconstituted locally.
+
+## Testing
+
+The roll is pure and testable on both sides. UI is verified manually.
+
+- **JS (`vitest`)** and **C# (`xunit`)** both assert, against the same spec:
+  - 1e6 draws at `p = 1/1000` have a sample mean within 1% of 1000
+  - every draw is `>= 1`
+  - the `U -> 1` edge yields exactly 1, and `U -> 0` yields a large finite value
+  - the countdown fires exactly when cumulative credited seconds reach the drawn value
+  - a failed/non-injectable fire does not consume `remaining` (extension only)
+- **`TEST_MODE`** flag forces `oneInN = 5` so the overlay can be exercised in seconds
+  rather than days.
+
+## Out of scope for v1
+
+- macOS and Linux desktop builds
+- Suppression during fullscreen apps, screen sharing, and calls (v2)
+- Global panic hotkey (v2)
+- GitHub Actions release pipeline (v1.1)
+- Code signing the Windows executable
+
+## Open risks
+
+| Risk | Mitigation |
+|---|---|
+| DMCA takedown of the store listing | Assets are a swappable pack; original-art build is a re-upload |
+| DMCA against the repo | Assets gitignored, never pushed |
+| Slow store review from `<all_urls>` | Written permission justification prepared with the submission |
+| SmartScreen warning on the exe | Documented in the README; signing deferred |
+| Silent audio on some Firefox pages | Accepted and documented; Chrome path uses offscreen documents |

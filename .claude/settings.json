@@ -1,0 +1,17 @@
+{
+  "showThinkingSummaries": true,
+  "permissions": {
+    "defaultMode": "bypassPermissions",
+    "allow": [
+      "Read",
+      "Edit",
+      "MultiEdit",
+      "Write",
+      "Bash(npm *)",
+      "Bash(npx *)",
+      "Bash(node *)",
+      "Bash(dotnet *)",
+      "Bash(git *)"
+    ]
+  }
+}

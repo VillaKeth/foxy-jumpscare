@@ -1,0 +1,32 @@
+# --- Assets: deliberately NOT tracked ---
+# foxy.png / scream.wav are copyrighted FNAF material. Keeping them out of the
+# repo means a DMCA notice costs us a re-upload, not the repository.
+# Populate locally per assets/PACK.md.
+assets/*.png
+assets/*.jpg
+assets/*.wav
+assets/*.ogg
+assets/*.mp3
+
+# --- Node / extension ---
+node_modules/
+dist/
+*.zip
+*.xpi
+
+# --- .NET / desktop ---
+[Bb]in/
+[Oo]bj/
+*.user
+.vs/
+
+# --- Stale config copied in from another project ---
+# Kept on disk in case something in it is wanted; never committed, since this
+# repo is public and that content is unrelated internal tooling.
+.claude/_archive-wellnessscape/
+.claude/settings.local.json
+
+# --- OS / editor ---
+Thumbs.db
+.DS_Store
+.idea/
