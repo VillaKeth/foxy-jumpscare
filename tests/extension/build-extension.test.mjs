@@ -19,6 +19,29 @@ describe('manifestFor', () => {
     expect(m.browser_specific_settings.gecko.id).toMatch(/@/);
   });
 
+  it('declares no data collection to AMO', () => {
+    // addons-linter warns without this, and it will become a hard requirement.
+    // The extension reads nothing and sends nothing, so "none" is accurate.
+    const gecko = manifestFor('firefox', BASE).browser_specific_settings.gecko;
+    expect(gecko.data_collection_permissions).toEqual({ required: ['none'] });
+  });
+
+  it('sets a minimum Firefox version that actually supports what it declares', () => {
+    // data_collection_permissions only exists from 140 (142 on Android).
+    // Claiming an older minimum makes addons-linter warn at submission.
+    const bss = manifestFor('firefox', BASE).browser_specific_settings;
+    expect(bss.gecko.strict_min_version).toBe('140.0');
+    expect(bss.gecko_android.strict_min_version).toBe('142.0');
+  });
+
+  it('uses options_ui rather than the Chrome-legacy options_page', () => {
+    // options_page is only supported from Firefox 126, below our declared
+    // strict_min_version. options_ui works on both browsers.
+    const m = manifestFor('chrome', BASE);
+    expect(m.options_page).toBeUndefined();
+    expect(m.options_ui).toEqual({ page: 'options.html', open_in_tab: false });
+  });
+
   it('does not leak the gecko block into the Chrome manifest', () => {
     expect(manifestFor('chrome', BASE).browser_specific_settings).toBeUndefined();
   });

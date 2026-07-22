@@ -7,10 +7,12 @@
     "assets": "node tools/build-assets.mjs",
     "build": "node tools/build-extension.mjs",
     "test": "vitest run",
-    "test:e2e": "playwright test"
+    "test:e2e": "playwright test",
+    "lint:firefox": "addons-linter dist/firefox"
   },
   "devDependencies": {
     "@playwright/test": "^1.61.1",
+    "addons-linter": "^10.9.0",
     "vitest": "^3.2.4"
   }
 }

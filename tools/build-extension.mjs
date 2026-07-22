@@ -24,7 +24,19 @@ export function manifestFor(target, base) {
   } else {
     manifest.background = { scripts: ['background.js'], type: 'module' };
     manifest.browser_specific_settings = {
-      gecko: { id: GECKO_ID, strict_min_version: '115.0' },
+      gecko: {
+        id: GECKO_ID,
+        // 140 rather than 115 because data_collection_permissions below only
+        // exists from 140. 140 is the current ESR line, so this still covers
+        // enterprise and LTS installs.
+        strict_min_version: '140.0',
+        // Required by AMO for new extensions. This one reads nothing and sends
+        // nothing anywhere, so the honest declaration is "none".
+        data_collection_permissions: { required: ['none'] },
+      },
+    };
+    manifest.browser_specific_settings.gecko_android = {
+      strict_min_version: '142.0',
     };
   }
 

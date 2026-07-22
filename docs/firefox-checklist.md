@@ -1,9 +1,24 @@
 # Firefox release checklist
 
-Playwright cannot load MV3 extensions in Firefox — it needs `web-ext` plus
-remote-debugging plumbing that is disproportionate for this project. So the
-Chromium suite in `tests/e2e/` covers Chrome, and Firefox is verified by hand
-against this list before every AMO submission.
+Firefox is a fully supported target — `dist/firefox` builds and runs. What is not
+automated here is *behavioural* testing: Playwright exposes no API for loading an
+extension in Firefox, unlike Chromium's `--load-extension`. Other tools can —
+Mozilla's `web-ext`, or Selenium's `installAddon` — they are simply not wired up
+yet. That is a gap in this repo's tooling, not a limitation of the extension.
+
+What **is** automated:
+
+```powershell
+npm run lint:firefox    # addons-linter — the same validator AMO runs on submission
+```
+
+It reports **0 errors, 0 warnings, 0 notices**, and it covers the whole class of
+manifest, permission and API-compatibility problems. It caught three real ones:
+a missing `data_collection_permissions` declaration, and `options_page` being
+unsupported below Firefox 126 — switched to `options_ui`, which works on both
+browsers.
+
+The list below is what the linter cannot see: whether it actually behaves.
 
 Load `dist/firefox` via `about:debugging` → This Firefox → Load Temporary Add-on
 → select `manifest.json`.
