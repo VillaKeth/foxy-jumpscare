@@ -1,5 +1,6 @@
 using System.IO;
 using System.Windows;
+using System.Windows.Controls;
 using System.Windows.Interop;
 using System.Windows.Media;
 using System.Windows.Threading;
@@ -9,40 +10,38 @@ using Forms = System.Windows.Forms;
 namespace FoxyJumpscare;
 
 /// <summary>
-/// A fullscreen overlay covering one monitor.
+/// A single fullscreen overlay spanning every monitor.
 ///
-/// Only the primary monitor plays the video. Every other monitor gets a plain
-/// black window. That is deliberate, and it is not just about avoiding
-/// overlapping audio:
+/// One window, not one per monitor. The earlier per-monitor design gave each
+/// screen its own MediaElement, and WPF's MediaElement does not render reliably
+/// on a secondary monitor: its playback clock advances normally while
+/// presentation stalls. Measured on a dual 1920x1080 setup, the second screen
+/// held byte-identical frames for ~900ms of an 880ms video. Synchronising the
+/// players fixed the clocks to within 3ms and changed nothing on screen, which
+/// is what proved the clocks were never the problem - it is the renderer.
 ///
-/// WPF's MediaElement does not render reliably on a secondary monitor. Its
-/// playback clock advances normally while presentation stalls, so a second
-/// screen sits frozen on an early frame for most of the clip while the primary
-/// plays through. Measured on a dual 1920x1080 setup: identical frames for
-/// ~900ms of an 880ms video. Starting the players together fixes the clocks and
-/// changes nothing on screen, because the clocks were never the problem.
-///
-/// One video on the screen the user is actually looking at, with the rest
-/// blacked out, sidesteps the whole thing and reads better anyway.
+/// So there is exactly one MediaElement, positioned over the primary screen,
+/// and every other screen is painted with a VisualBrush of that same element.
+/// A brush cannot drift from its source, so all monitors show the same frame by
+/// construction, and only one decoder ever runs.
 /// </summary>
 public partial class OverlayWindow : Window
 {
     /// <summary>
-    /// Absolute ceiling on how long an overlay may live, armed before any media
-    /// event. A file broken badly enough raises neither MediaOpened nor
+    /// Absolute ceiling on how long the overlay may live, armed before any
+    /// media event. A file broken badly enough raises neither MediaOpened nor
     /// MediaFailed, and without this the user is left staring at a fullscreen
     /// window they cannot close.
     /// </summary>
     private static readonly TimeSpan HardStop = TimeSpan.FromSeconds(15);
 
-    private readonly System.Drawing.Rectangle _physicalBounds;
+    private readonly System.Drawing.Rectangle _virtualBounds;
+    private readonly System.Drawing.Rectangle _primaryBounds;
+    private readonly IReadOnlyList<System.Drawing.Rectangle> _mirrorBounds;
     private readonly int _failsafeMarginMs;
-    private readonly bool _playsVideo;
     private DispatcherTimer? _failsafe;
     private DispatcherTimer? _hardStop;
     private bool _closed;
-
-    private string _tag = "?";
 
     /// <summary>
     /// Set FOXY_TRACE=1 to append overlay timing to %TEMP%\foxy-overlay.log.
@@ -54,49 +53,51 @@ public partial class OverlayWindow : Window
     private static readonly string TracePath =
         Path.Combine(Path.GetTempPath(), "foxy-overlay.log");
 
-    private void Trace(string message)
+    private static void Trace(string message)
     {
         if (!Tracing) return;
         try
         {
             File.AppendAllText(
                 TracePath,
-                $"{DateTime.Now:HH:mm:ss.fff} [{_tag}] {message}{Environment.NewLine}");
+                $"{DateTime.Now:HH:mm:ss.fff} {message}{Environment.NewLine}");
         }
         catch (IOException) { /* tracing must never break playback */ }
     }
 
-    private OverlayWindow(
-        System.Drawing.Rectangle physicalBounds,
-        string? videoPath,
-        int failsafeMarginMs)
+    private OverlayWindow(string videoPath, int failsafeMarginMs)
     {
         InitializeComponent();
 
-        _physicalBounds = physicalBounds;
         _failsafeMarginMs = failsafeMarginMs;
-        _playsVideo = videoPath is not null;
 
-        if (_playsVideo)
+        var screens = Forms.Screen.AllScreens;
+        var primary = Forms.Screen.PrimaryScreen ?? screens[0];
+
+        _primaryBounds = primary.Bounds;
+        _mirrorBounds = screens
+            .Where(s => s.DeviceName != primary.DeviceName)
+            .Select(s => s.Bounds)
+            .ToList();
+
+        _virtualBounds = System.Drawing.Rectangle.FromLTRB(
+            screens.Min(s => s.Bounds.Left),
+            screens.Min(s => s.Bounds.Top),
+            screens.Max(s => s.Bounds.Right),
+            screens.Max(s => s.Bounds.Bottom));
+
+        Player.Source = new Uri(videoPath);
+        Player.MediaEnded += (_, _) => { Trace("MediaEnded"); CloseOnce(); };
+        Player.MediaFailed += (_, e) =>
         {
-            Player.Source = new Uri(videoPath!);
-            Player.MediaEnded += (_, _) => { Trace("MediaEnded"); CloseOnce(); };
-            Player.MediaFailed += (_, e) =>
-            {
-                Trace($"MediaFailed: {e.ErrorException?.Message}");
-                CloseOnce();
-            };
-            Player.MediaOpened += (_, _) =>
-            {
-                Trace($"MediaOpened natural={Player.NaturalDuration}");
-                ArmFailsafe();
-            };
-        }
-        else
+            Trace($"MediaFailed: {e.ErrorException?.Message}");
+            CloseOnce();
+        };
+        Player.MediaOpened += (_, _) =>
         {
-            // Nothing to play; this window is only here to black out a screen.
-            Player.Visibility = Visibility.Collapsed;
-        }
+            Trace($"MediaOpened natural={Player.NaturalDuration}");
+            ArmFailsafe();
+        };
 
         _hardStop = new DispatcherTimer { Interval = HardStop };
         _hardStop.Tick += (_, _) => CloseOnce();
@@ -104,46 +105,18 @@ public partial class OverlayWindow : Window
     }
 
     /// <summary>
-    /// Black out every monitor and play the video on the primary one. Returns
-    /// immediately; the overlays tear themselves down.
+    /// Cover every monitor and play. Returns immediately; the overlay tears
+    /// itself down.
     /// </summary>
     public static void ShowAll(string videoPath, int failsafeMarginMs)
     {
         if (!File.Exists(videoPath)) return;
 
-        var primaryScreen = Forms.Screen.PrimaryScreen ?? Forms.Screen.AllScreens[0];
-        OverlayWindow? primary = null;
-        var blanks = new List<OverlayWindow>();
-
-        foreach (var screen in Forms.Screen.AllScreens)
-        {
-            var isPrimary = screen.DeviceName == primaryScreen.DeviceName && primary is null;
-            var window = new OverlayWindow(
-                screen.Bounds,
-                isPrimary ? videoPath : null,
-                failsafeMarginMs)
-            {
-                _tag = $"{screen.DeviceName}{(isPrimary ? " PRIMARY" : " blank")}",
-            };
-
-            if (isPrimary) primary = window;
-            else blanks.Add(window);
-
-            window.Trace("Show()");
-            window.Show();
-        }
-
-        if (primary is null) return;
-
-        // The blanks have no media of their own, so they follow the primary.
-        // Their own hard stop still applies if the primary somehow never closes.
-        primary.Closed += (_, _) =>
-        {
-            foreach (var blank in blanks) blank.CloseOnce();
-        };
-
-        primary.Trace("Play()");
-        primary.Player.Play();
+        var window = new OverlayWindow(videoPath, failsafeMarginMs);
+        Trace($"Show() screens={Forms.Screen.AllScreens.Length}");
+        window.Show();
+        Trace("Play()");
+        window.Player.Play();
     }
 
     protected override void OnSourceInitialized(EventArgs e)
@@ -152,21 +125,58 @@ public partial class OverlayWindow : Window
 
         NoActivate.Apply(new WindowInteropHelper(this).Handle);
 
-        // Screen.Bounds is physical pixels; WPF positions in device-independent
-        // units. Without this conversion the overlay is mis-sized on any
-        // mixed-DPI setup - which is most laptops with an external display.
+        // Screen bounds are physical pixels; WPF positions in device-independent
+        // units. Without this conversion everything is mis-sized on a scaled
+        // display.
         var source = PresentationSource.FromVisual(this);
         var toDip = source?.CompositionTarget?.TransformFromDevice ?? Matrix.Identity;
 
-        var topLeft = toDip.Transform(new Point(_physicalBounds.Left, _physicalBounds.Top));
-        var size = toDip.Transform(new Point(_physicalBounds.Width, _physicalBounds.Height));
+        Point ToDip(int x, int y) => toDip.Transform(new Point(x, y));
 
-        Left = topLeft.X;
-        Top = topLeft.Y;
-        Width = size.X;
-        Height = size.Y;
+        var origin = ToDip(_virtualBounds.Left, _virtualBounds.Top);
+        var extent = ToDip(_virtualBounds.Width, _virtualBounds.Height);
 
-        Trace($"SourceInitialized bounds={Left},{Top} {Width}x{Height} video={_playsVideo}");
+        Left = origin.X;
+        Top = origin.Y;
+        Width = extent.X;
+        Height = extent.Y;
+
+        // Everything inside the canvas is positioned relative to the window's
+        // own top-left, which is the virtual desktop's top-left.
+        Rect Local(System.Drawing.Rectangle bounds)
+        {
+            var tl = ToDip(bounds.Left - _virtualBounds.Left, bounds.Top - _virtualBounds.Top);
+            var wh = ToDip(bounds.Width, bounds.Height);
+            return new Rect(tl.X, tl.Y, wh.X, wh.Y);
+        }
+
+        var primaryRect = Local(_primaryBounds);
+        Canvas.SetLeft(Player, primaryRect.X);
+        Canvas.SetTop(Player, primaryRect.Y);
+        Player.Width = primaryRect.Width;
+        Player.Height = primaryRect.Height;
+
+        foreach (var bounds in _mirrorBounds)
+        {
+            var rect = Local(bounds);
+            var mirror = new System.Windows.Shapes.Rectangle
+            {
+                Width = rect.Width,
+                Height = rect.Height,
+                Fill = new VisualBrush(Player)
+                {
+                    Stretch = Stretch.Uniform,
+                    // The brush must not cache, or the mirrors freeze on the
+                    // first frame while the primary plays on.
+                    AutoLayoutContent = false,
+                },
+            };
+            Canvas.SetLeft(mirror, rect.X);
+            Canvas.SetTop(mirror, rect.Y);
+            Root.Children.Add(mirror);
+        }
+
+        Trace($"SourceInitialized window={Left},{Top} {Width}x{Height} mirrors={_mirrorBounds.Count}");
     }
 
     /// <summary>
@@ -203,12 +213,8 @@ public partial class OverlayWindow : Window
         _hardStop?.Stop();
         _hardStop = null;
 
-        if (_playsVideo)
-        {
-            Player.Stop();
-            Player.Close();
-        }
-
+        Player.Stop();
+        Player.Close();
         Close();
     }
 }

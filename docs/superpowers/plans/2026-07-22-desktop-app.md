@@ -1173,10 +1173,19 @@ any, then priming each player and holding until every `MediaOpened` fired. The s
 synchronised the clocks to within 3ms and changed nothing on screen, which is what
 proved the clocks were never the problem.
 
-Landed instead: the primary monitor plays the video, every other monitor gets a plain
-black window with no `MediaElement` at all. This sidesteps the renderer, makes
-overlapping audio structurally impossible rather than merely muted, and puts the scare
-on the screen the user is looking at. Recorded in `docs/desktop-checklist.md`.
+An interim version played on the primary only and blacked out the rest. That worked but
+threw away the effect on every other screen, and was the wrong call — it treated a
+solvable rendering problem as a hard limit.
+
+Landed instead: **one** window spanning the whole virtual desktop with **one**
+`MediaElement` over the primary screen, and every other screen painted with a
+`VisualBrush` of that same element. A brush cannot drift from its source, so all
+monitors show the same frame by construction and only one decoder runs; overlapping
+audio is impossible because there is only one player. The brush needs
+`AutoLayoutContent = false` or the mirrors freeze on the first frame.
+
+Known limit: one window spanning monitors of different DPI takes a single DPI from WPF.
+Recorded in `docs/desktop-checklist.md`.
 
 **`MediaOpened` fires after teardown.** `Player.Close()` raises a final `MediaOpened`,
 which armed a fresh failsafe timer on an already-closed window. Guarded with an

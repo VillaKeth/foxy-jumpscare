@@ -206,16 +206,25 @@ WinForms would have needed LibVLCSharp or a WPF interop host to do the same job.
   **`ShowActivated = false`** so it never steals focus or swallows keystrokes,
   `Background = Black`, hosting a `MediaElement` with `LoadedBehavior = Manual`,
   `Stretch = Uniform`.
-- **Multi-monitor:** only the **primary** screen plays the video at all. Every other
-  monitor gets a plain black window with no `MediaElement`.
+- **Multi-monitor:** **one** window spanning the whole virtual desktop, containing
+  exactly **one** `MediaElement` positioned over the primary screen. Every other screen
+  is a `Rectangle` painted with a `VisualBrush` of that same element.
 
-  This started as "mute the non-primary overlays" to avoid overlapping copies of the
-  scream. Implementation showed a worse problem underneath: WPF's `MediaElement` does
-  not render reliably on a secondary monitor — its playback clock advances while
-  presentation stalls, holding identical frames for ~900ms of an 880ms video.
-  Synchronising the players fixed the clocks and changed nothing on screen. Playing on
-  one monitor only sidesteps the renderer, makes overlapping audio structurally
-  impossible, and puts the scare on the screen the user is looking at.
+  Three designs were tried. One `MediaElement` per monitor fails: WPF's `MediaElement`
+  does not render reliably on a secondary monitor — its playback clock advances while
+  presentation stalls, holding byte-identical frames for ~900ms of an 880ms video.
+  Synchronising the players fixed the clocks to within 3ms and changed nothing on
+  screen, proving the renderer was at fault, not the timing. Playing on the primary
+  only and blacking out the rest worked but gave up the effect on every other screen.
+
+  The brush approach keeps it: a `VisualBrush` cannot drift from its source, so all
+  monitors show the same frame **by construction**, and only one decoder ever runs.
+  Overlapping audio is structurally impossible for the same reason — there is one
+  player, so there is one audio stream.
+
+  Known limit: a single window spanning monitors of **different DPI** gets one DPI from
+  WPF, and Windows scales the rest. Acceptable; the mixed-DPI case is on the manual
+  checklist.
 - **DPI:** `Screen.AllScreens` reports *physical pixels* while WPF positions in
   device-independent units. Window bounds must be converted per-monitor via
   `VisualTreeHelper.GetDpi` / the window's `CompositionTarget` matrix. Skipping this

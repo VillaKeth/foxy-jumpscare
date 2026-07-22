@@ -17,8 +17,8 @@ dotnet publish desktop/FoxyJumpscare -c Release -r win-x64 --self-contained fals
       (confirm in Task Manager — a surviving process keeps firing invisibly)
 - [ ] Test Scare plays fullscreen on the **primary** monitor with audio
       (`FoxyJumpscare.exe --test-scare` fires once without touching the tray menu)
-- [ ] With multiple monitors: the video plays on the **primary** only, and every
-      other screen goes **solid black**. This is deliberate — see below.
+- [ ] With multiple monitors: **every** screen shows Foxy, all on the **same frame**,
+      and there is **exactly one** audible audio stream
 - [ ] **Mixed-DPI**: overlay covers each monitor exactly, no gaps or overhang.
       Laptop panel plus an external display at different scaling is the case that
       breaks — this is what `app.manifest`'s PerMonitorV2 and the
@@ -38,24 +38,27 @@ dotnet publish desktop/FoxyJumpscare -c Release -r win-x64 --self-contained fals
 - [ ] First run of the published exe shows a SmartScreen warning; note the exact
       wording for the README
 
-## Why only the primary monitor plays the video
+## How multi-monitor works, and why it looks odd in the code
 
-WPF's `MediaElement` does not render reliably on a secondary monitor. Its playback
-clock advances normally while presentation stalls — measured on a dual 1920x1080
-setup, the second screen held byte-identical frames for ~900ms of an 880ms video
-while the primary played through cleanly.
+One window spanning the whole virtual desktop. One `MediaElement` over the primary
+screen. Every other screen is a `Rectangle` filled with a `VisualBrush` of that
+same element.
 
-Two fixes were tried and rejected before landing on this one:
+This is not the obvious design, and the obvious one does not work. Three attempts:
 
-1. Show all windows, then play them in one pass — no change; the clocks were
-   never the problem.
-2. Prime each player with Play/Pause and hold until every `MediaOpened` fired,
-   then start together. This did synchronise the clocks to within 3ms and
-   changed nothing on screen.
+1. **One `MediaElement` per monitor.** Fails. WPF's `MediaElement` does not render
+   reliably on a secondary monitor — its playback clock advances normally while
+   presentation stalls. Measured here: the second screen held byte-identical
+   frames for ~900ms of an 880ms video.
+2. **Same, but start every player together** (prime with Play/Pause, hold until
+   all `MediaOpened` fired). Synchronised the clocks to within 3ms and changed
+   nothing on screen. That is what proved the renderer was at fault.
+3. **One decoder, mirrored with a `VisualBrush`.** Works. A brush cannot drift
+   from its source, so every monitor shows the same frame by construction, and
+   overlapping audio is impossible because there is only one player.
 
-Playing on the primary and blacking out the rest sidesteps the renderer entirely,
-makes overlapping audio structurally impossible rather than merely muted, and
-puts the scare on the screen the user is actually looking at.
+The `VisualBrush` sets `AutoLayoutContent = false`; leaving it on lets the mirrors
+freeze on the first frame while the primary plays through.
 
 Set `FOXY_TRACE=1` to append overlay timing to `%TEMP%\foxy-overlay.log` if this
 ever needs revisiting.

@@ -8,9 +8,15 @@
         ShowActivated="False"
         Background="Black"
         WindowStartupLocation="Manual">
-    <MediaElement x:Name="Player"
-                  LoadedBehavior="Manual"
-                  UnloadedBehavior="Stop"
-                  Stretch="Uniform"
-                  ScrubbingEnabled="False" />
+    <!-- One window spanning every monitor. The single MediaElement sits over
+         the primary screen; each other screen gets a Rectangle painted with a
+         VisualBrush of that same element. One decoder, N painted copies, in
+         sync by construction because they are literally the same visual. -->
+    <Canvas x:Name="Root" Background="Black">
+        <MediaElement x:Name="Player"
+                      LoadedBehavior="Manual"
+                      UnloadedBehavior="Stop"
+                      Stretch="Uniform"
+                      ScrubbingEnabled="False" />
+    </Canvas>
 </Window>
