@@ -856,6 +856,41 @@ git commit -m "chore(assets): tune chromakey values for source footage"
 
 **Known limitation, deliberate.** The pipeline verifies alpha is *present* but not that the key is *good* — edge quality is judged by eye in Task 4. Automating that would require perceptual comparison against a reference render, which is not worth building for a one-time tuning step.
 
+## Corrections made during execution
+
+Tasks 1-3 were executed on 2026-07-22. One assumption in this plan was wrong and the
+implementation deviates from it deliberately.
+
+**The plan asserted alpha via `pix_fmt`. That is wrong for WebM.** Task 3's test as
+written expected `probe(webm).pixFmt === 'yuva420p'`. It came back `yuv420p` and the
+build correctly refused to proceed. VP9 keeps the alpha plane in a separate Matroska
+layer, so the primary stream's pixel format reports opaque no matter what.
+
+Changes:
+
+- `probe()` returns an additional `alphaMode` boolean, read from the `alpha_mode` stream
+  tag via `-show_entries ...:stream_tags=alpha_mode`.
+- New `carriesAlpha(info)` helper — `hasAlpha(info.pixFmt) || info.alphaMode`.
+  `hasAlpha` stays a pure pixel-format predicate and is still used for the opaque MP4.
+- `buildAssets` verifies with `carriesAlpha`, not `hasAlpha`.
+
+**The `-auto-alt-ref` guard was vacuous and is no longer claimed.** Encoding the same
+source with and without `-auto-alt-ref 0` on ffmpeg 8.1.1 produced `alpha_mode=1` both
+times, so the assertion never guarded what its comment claimed. The flag is still
+passed — it is documented to matter and costs nothing — but the test comment now states
+plainly that it proves only that alpha was requested.
+
+**ffmpeg cannot verify its own alpha output.** Round-tripping a genuinely transparent
+WebM through `format=rgba,alphaextract,signalstats` reports mean alpha 255. This is an
+ffmpeg decode limitation, not a bad encode. Confirmed by loading the output in Chromium
+and reading canvas pixels: the keyed-out corner returns `[0,0,0,0]` and the preserved
+subject returns `[251,1,2,255]`. Recorded in `assets/PACK.md`.
+
+**Open question for Plan 2.** Since real alpha verification requires a browser, and Plan
+2 needs browser testing for the overlay anyway, adding Playwright as a devDependency
+would make this assertable in CI rather than by eye. Not done here — it is a real
+dependency cost and belongs to a plan that needs browsers regardless.
+
 ## Next
 
 Plans 2 (extension) and 3 (desktop) are not yet written. Both depend on this pipeline's outputs existing, but neither depends on its internals, so they can be written and executed in either order once this lands.

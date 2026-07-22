@@ -2,7 +2,7 @@ import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { probe, hasAlpha } from '../tools/lib/probe.mjs';
+import { probe, hasAlpha, carriesAlpha } from '../tools/lib/probe.mjs';
 import { run } from '../tools/lib/run.mjs';
 import { makeGreenscreen } from './helpers/synthetic.mjs';
 
@@ -28,6 +28,10 @@ describe('probe', () => {
     expect(info.durationSec).toBeCloseTo(1, 1);
   });
 
+  it('reports alphaMode false for a plain opaque source', async () => {
+    expect((await probe(src)).alphaMode).toBe(false);
+  });
+
   it('rejects a file with no video stream', async () => {
     const audioOnly = join(dir, 'audio.m4a');
     await run('ffmpeg', [
@@ -50,6 +54,22 @@ describe('hasAlpha', () => {
     expect(hasAlpha('rgb24')).toBe(false);
     // Guards a substring bug: yuv444p contains no alpha despite the 'yuv'.
     expect(hasAlpha('yuv444p')).toBe(false);
+  });
+});
+
+describe('carriesAlpha', () => {
+  it('trusts the pixel format when it carries alpha directly', () => {
+    expect(carriesAlpha({ pixFmt: 'yuva420p', alphaMode: false })).toBe(true);
+  });
+
+  it('trusts the container flag when the pixel format looks opaque', () => {
+    // This is the WebM/VP9 case: alpha lives in a separate Matroska layer,
+    // so the primary stream reports yuv420p even though alpha is present.
+    expect(carriesAlpha({ pixFmt: 'yuv420p', alphaMode: true })).toBe(true);
+  });
+
+  it('reports no alpha when neither signal is set', () => {
+    expect(carriesAlpha({ pixFmt: 'yuv420p', alphaMode: false })).toBe(false);
   });
 });
 

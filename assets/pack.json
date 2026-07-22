@@ -1,0 +1,11 @@
+{
+  "name": "withered-foxy",
+  "source": "foxy-src.mp4",
+  "web": "foxy.webm",
+  "desktop": "foxy.mp4",
+  "chromakey": {
+    "key": "0x00FF00",
+    "similarity": 0.18,
+    "blend": 0.05
+  }
+}

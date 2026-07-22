@@ -261,8 +261,15 @@ formats the targets actually need:
 | `foxy.mp4` | H.264 over black, AAC | Desktop | `MediaElement` plays it natively; overlay is black anyway |
 
 Keying is `chromakey` + `despill`, with the tuned parameters stored in `pack.json` so a
-rebuild reproduces the tuned result rather than the defaults. The VP9 pass **must** set
-`-auto-alt-ref 0`; alt-ref frames silently destroy the alpha channel.
+rebuild reproduces the tuned result rather than the defaults. The VP9 pass sets
+`-auto-alt-ref 0`, since alt-ref frames are documented to destroy the alpha channel.
+
+**ffmpeg cannot verify its own alpha output.** It encodes VP9 alpha correctly but cannot
+decode it back: `ffprobe` reports `pix_fmt` as `yuv420p`, and round-tripping through
+`alphaextract` returns a fully opaque plane even for a genuinely transparent file. The
+only ffmpeg-side signal is the `alpha_mode=1` container tag, which is set with or
+without `-auto-alt-ref 0` and therefore proves only that alpha was requested. Real
+verification is a browser pixel read — see `assets/PACK.md`.
 
 All media is gitignored (see `.gitignore`), including the source. `assets/PACK.md`
 documents the pipeline so the pack can be reconstituted locally.
