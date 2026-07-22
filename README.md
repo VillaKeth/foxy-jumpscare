@@ -51,9 +51,24 @@ npm run assets
 # Extension -> dist/chrome, dist/firefox
 npm run build
 
-# Desktop
-dotnet publish desktop/FoxyJumpscare -c Release
+# Desktop -> a ~0.2 MB framework-dependent exe
+dotnet publish desktop/FoxyJumpscare -c Release -r win-x64 `
+  --self-contained false -p:PublishSingleFile=true
 ```
+
+## Test
+
+```powershell
+npm test          # 69 unit tests — roll, tick accounting, asset pipeline, manifests
+npm run test:e2e  # 6 Chromium end-to-end tests (opens a real browser window)
+dotnet test desktop/FoxyJumpscare.Core.Tests   # 24 tests
+```
+
+Two things are verified by hand rather than automated, and the reasons are real
+rather than laziness — see [`docs/firefox-checklist.md`](docs/firefox-checklist.md)
+(Playwright cannot load MV3 extensions in Firefox) and
+[`docs/desktop-checklist.md`](docs/desktop-checklist.md) (DPI, focus stealing, and
+multi-monitor audio are invisible to a headless test).
 
 Drop the greenscreen source into `assets/` first, per
 [`assets/PACK.md`](assets/PACK.md) — every build expects the derived files.
