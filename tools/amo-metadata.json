@@ -1,0 +1,12 @@
+{
+  "categories": ["other"],
+  "summary": {
+    "en-US": "A rare jumpscare while you browse. A 1 in 100,000 chance every active second."
+  },
+  "description": {
+    "en-US": "Somewhere between right now and about a week from now, something is going to lunge at you.\n\nWARNING: this is a sudden, loud video with a scream, by design. Do not install it if you are photosensitive, and think carefully about headphones.\n\nThis is a port of the Terraria mod \"1/10000 Chance for Withered Foxy Jumpscare Every Second\" by yonsan (YMY), retuned for a browser you leave open all day rather than a play session. It rolls once per second of active browsing, at 1 in 100,000 by default.\n\nIt only counts seconds you are actually browsing. It does not roll while the browser is in the background, while your machine is idle, or while your screen is locked.\n\nRarity is configurable from the toolbar button: Ultra-rare, Rare, Normal, Terraria-faithful, or any 1-in-N you care to type. There is also a Test button, if you would rather see it once on your own terms than be ambushed.\n\nIt reads nothing, stores nothing about you, and sends nothing anywhere. It makes no network requests at all. The only data it keeps is your own settings and a countdown, both on your device."
+  },
+  "version": {
+    "license": "all-rights-reserved"
+  }
+}

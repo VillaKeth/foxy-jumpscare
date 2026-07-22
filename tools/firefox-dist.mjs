@@ -121,6 +121,17 @@ if (command === 'sign' || command === 'publish') {
     '--channel', channel,
     '--api-key', credentials.apiKey,
     '--api-secret', credentials.apiSecret,
+    // A listed version is signed only after review, which can take days.
+    // Waiting for that here would just hang the terminal; the upload itself
+    // is the thing that has to succeed.
+    //
+    // The metadata file is not optional for a listed submission: AMO rejects
+    // the upload outright without a licence. "all-rights-reserved" is the
+    // honest declaration - the code is ours, the video in the asset pack is
+    // not, so an open-source licence would be claiming rights we do not have.
+    ...(channel === 'listed'
+      ? ['--approval-timeout', '0', '--amo-metadata', join(REPO_ROOT, 'tools', 'amo-metadata.json')]
+      : []),
   ]);
 
   if (code !== 0) {
