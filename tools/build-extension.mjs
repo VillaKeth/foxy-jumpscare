@@ -5,6 +5,10 @@ import { fileURLToPath } from 'node:url';
 
 const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const TARGETS = ['chrome', 'firefox'];
+// A bare GUID, not an email-style id. An email-style id embeds a domain in
+// every published copy of the manifest and in AMO's public API, and an add-on
+// id can never be changed once a listing exists - so the domain would be
+// permanent and public. This form carries no attribution at all.
 const GECKO_ID = '{47d51fee-cbcf-4204-b2b6-a2b72c965b26}';
 
 /**

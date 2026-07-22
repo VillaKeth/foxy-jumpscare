@@ -16,7 +16,16 @@ describe('manifestFor', () => {
   it('gives Firefox a scripts background and a gecko id', () => {
     const m = manifestFor('firefox', BASE);
     expect(m.background).toEqual({ scripts: ['background.js'], type: 'module' });
-    expect(m.browser_specific_settings.gecko.id).toMatch(/@/);
+    expect(m.browser_specific_settings.gecko.id).toMatch(/^\{[0-9a-f-]{36}\}$/);
+  });
+
+  it('carries no attribution in the add-on id', () => {
+    // The id ships in every copy of the manifest and is exposed by AMO's
+    // public API, and it can never be changed once a listing exists. An
+    // email-style id would make whatever domain it names permanently public.
+    const id = manifestFor('firefox', BASE).browser_specific_settings.gecko.id;
+    expect(id).not.toContain('@');
+    expect(id).not.toMatch(/[a-z]+\.(com|org|net|io|co)/i);
   });
 
   it('declares no data collection to AMO', () => {

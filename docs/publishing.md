@@ -191,7 +191,7 @@ misleading and an obvious flag during review.
 ## Firefox AMO
 
 Free, no developer fee. The one irreversible decision is the **add-on id**:
-`{47d51fee-cbcf-4204-b2b6-a2b72c965b26}` is claimed by whichever channel you submit
+The id in `tools/build-extension.mjs` is claimed by whichever channel you submit
 to first, and an id cannot be moved between accounts.
 
 ### First submission — the web UI
