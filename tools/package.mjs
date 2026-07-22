@@ -2,29 +2,35 @@
 /**
  * Build submittable store packages.
  *
- * Produces dist/foxy-jumpscare-chrome-vX.Y.Z.zip and the Firefox equivalent,
- * each with manifest.json at the archive root, which is what both stores
- * require.
+ * Produces dist/packages/foxy-jumpscare-chrome-vX.Y.Z.zip and the Firefox
+ * equivalent, each with manifest.json at the archive root, which is what both
+ * stores require.
  *
  * Usage: npm run package
  */
-import { readFile, rm, mkdir, readdir, stat } from 'node:fs/promises';
-import { execFile } from 'node:child_process';
-import { join, dirname, resolve } from 'node:path';
+import { readFile, writeFile, rm, mkdir, readdir, stat } from 'node:fs/promises';
+import { join, dirname, resolve, relative, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { promisify } from 'node:util';
+import { createZip } from './lib/zip.mjs';
 
-const execFileAsync = promisify(execFile);
 const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const TARGETS = ['chrome', 'firefox'];
 
-async function dirSize(dir) {
-  let total = 0;
+/** Every file under dir, as archive-relative POSIX paths. */
+async function collect(dir, base = dir) {
+  const out = [];
   for (const entry of await readdir(dir, { withFileTypes: true })) {
     const path = join(dir, entry.name);
-    total += entry.isDirectory() ? await dirSize(path) : (await stat(path)).size;
+    if (entry.isDirectory()) {
+      out.push(...await collect(path, base));
+    } else {
+      out.push({
+        name: relative(base, path).split(sep).join('/'),
+        data: await readFile(path),
+      });
+    }
   }
-  return total;
+  return out;
 }
 
 const version = JSON.parse(
@@ -51,23 +57,30 @@ for (const target of TARGETS) {
     process.exit(1);
   }
 
-  const zip = join(outDir, `foxy-jumpscare-${target}-v${version}.zip`);
-  await rm(zip, { force: true });
+  const files = await collect(src);
 
-  // Compress-Archive with a \* source puts the directory's *contents* at the
-  // archive root. Zipping the directory itself nests everything one level
-  // deeper, and both stores reject a manifest that is not at the root.
-  await execFileAsync('powershell', [
-    '-NoProfile',
-    '-Command',
-    `Compress-Archive -Path '${src}\\*' -DestinationPath '${zip}' -CompressionLevel Optimal`,
-  ]);
+  // manifest.json must sit at the archive root. Zipping the directory itself
+  // rather than its contents nests everything one level deeper, and both
+  // stores reject that.
+  if (!files.some((f) => f.name === 'manifest.json')) {
+    console.error('\nmanifest.json is not at the archive root.\n');
+    process.exit(1);
+  }
 
-  const { size } = await stat(zip);
+  const zipPath = join(outDir, `foxy-jumpscare-${target}-v${version}.zip`);
+  await rm(zipPath, { force: true });
+  await writeFile(zipPath, createZip(files));
+
+  const { size } = await stat(zipPath);
+  const unpacked = files.reduce((n, f) => n + f.data.length, 0);
   console.log(
-    `  ${target.padEnd(8)} ${zip}  ` +
-    `${(size / 1024).toFixed(0)} KB zipped, ${((await dirSize(src)) / 1024).toFixed(0)} KB unpacked`
+    `  ${target.padEnd(8)} ${zipPath}  ` +
+    `${(size / 1024).toFixed(0)} KB zipped, ${(unpacked / 1024).toFixed(0)} KB unpacked, ` +
+    `${files.length} files`
   );
 }
 
-console.log(`\n  version ${version} — remember to bump extension/manifest.base.json before a resubmission.\n`);
+console.log(
+  `\n  version ${version} — bump extension/manifest.base.json before a resubmission.\n` +
+  '  Validate the archive itself with: npm run lint:package\n'
+);
