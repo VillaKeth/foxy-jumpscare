@@ -1,0 +1,16 @@
+<Window x:Class="FoxyJumpscare.OverlayWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        WindowStyle="None"
+        ResizeMode="NoResize"
+        ShowInTaskbar="False"
+        Topmost="True"
+        ShowActivated="False"
+        Background="Black"
+        WindowStartupLocation="Manual">
+    <MediaElement x:Name="Player"
+                  LoadedBehavior="Manual"
+                  UnloadedBehavior="Stop"
+                  Stretch="Uniform"
+                  ScrubbingEnabled="False" />
+</Window>
