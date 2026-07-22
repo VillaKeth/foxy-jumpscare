@@ -29,6 +29,9 @@ dist/
 .claude/_archive-wellnessscape/
 .claude/settings.local.json
 
+# --- Tooling scratch ---
+.playwright-mcp/
+
 # --- OS / editor ---
 Thumbs.db
 .DS_Store

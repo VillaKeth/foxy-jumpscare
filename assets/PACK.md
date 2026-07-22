@@ -70,6 +70,27 @@ Raise `--similarity` to take more green, raise `--blend` to soften the edge. Ins
 `foxy.webm` over a white *and* a dark background before shipping — a fringe invisible on
 one is obvious on the other.
 
+### ⚠️ ffmpeg cannot verify its own alpha output
+
+**ffmpeg encodes VP9 alpha but cannot decode it back.** Verified on ffmpeg 8.1.1:
+
+- `ffprobe` reports the WebM's `pix_fmt` as `yuv420p`, not `yuva420p` — VP9 keeps the
+  alpha plane in a separate Matroska layer, so the primary stream looks opaque.
+- The `alpha_mode=1` stream tag *is* set, and is the flag browsers actually read. But it
+  is set **with or without** `-auto-alt-ref 0`, so it does not prove the encode was
+  correct.
+- Decoding it back through `format=rgba,alphaextract` returns a fully opaque alpha plane
+  (mean 255) even when the file is genuinely transparent. This is an ffmpeg decode
+  limitation, **not** a bad encode.
+
+So a green screen that keyed perfectly still looks broken to every ffmpeg-based check.
+The build script asserts the `alpha_mode` flag because it catches a total failure to
+request alpha, and claims nothing beyond that.
+
+**Real verification is a browser.** Load the WebM over a coloured background, draw it to
+a canvas, and read the pixels. Against the synthetic test clip this returns
+`[0,0,0,0]` in the keyed-out corner and `[251,1,2,255]` on the preserved subject.
+
 ## `pack.json`
 
 ```json

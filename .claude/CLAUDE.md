@@ -42,13 +42,15 @@ desktop). The VP9 pass must pass `-auto-alt-ref 0` or the alpha channel is destr
 Node 24 / npm 11, .NET 8 SDK, ffmpeg, git. No pnpm, no rust on this box.
 
 ```powershell
+# single root package.json covers tools + extension — no per-package installs
+npm install
+
 # assets — run first; both builds expect the derived files
-node tools/build-assets.mjs
+npm run assets
 
 # extension
-npm --prefix extension install
-npm --prefix extension run build      # -> dist/chrome, dist/firefox
-npm --prefix extension test
+npm run build                         # -> dist/chrome, dist/firefox
+npm test
 
 # desktop
 dotnet build   desktop/FoxyJumpscare
