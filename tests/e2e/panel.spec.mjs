@@ -34,8 +34,10 @@ test('the panel reports the current odds and countdown', async ({ context, worke
 
   const panel = await openPanel(context, extensionId);
 
+  // "chance" is load-bearing: without it this reads as "one every 100,000
+  // seconds", which is a different claim from a per-second probability.
   await expect(panel.locator('#odds-note')).toHaveText(
-    '1 in 100,000 every active second — about once every 7 days.'
+    '1 in 100,000 chance every active second, so about once every 7 days.'
   );
   await expect(panel.locator('#remaining')).toHaveText('1d 1h');
   await expect(panel.locator('#enabled')).toBeChecked();

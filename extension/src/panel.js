@@ -22,8 +22,10 @@ function selectedOneInN() {
 }
 
 function renderOdds(oneInN) {
+  // "1 in N" alone reads as "one every N seconds". It is a chance, rolled
+  // afresh every second - the average is a consequence of that, not the rule.
   noteEl.textContent =
-    `1 in ${oneInN.toLocaleString()} every active second — ${describeOdds(oneInN)}.`;
+    `1 in ${oneInN.toLocaleString()} chance every active second, so ${describeOdds(oneInN)}.`;
 }
 
 function renderRemaining(remaining) {
