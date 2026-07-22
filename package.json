@@ -16,7 +16,8 @@
     "publish:firefox": "node tools/firefox-dist.mjs publish",
     "verify:desktop": "pwsh -NoProfile -File tools/verify-desktop.ps1",
     "icons": "node tools/make-icons.mjs",
-    "package": "node tools/package.mjs"
+    "package": "node tools/package.mjs",
+    "package:source": "node tools/package-source.mjs"
   },
   "devDependencies": {
     "@playwright/test": "^1.61.1",
