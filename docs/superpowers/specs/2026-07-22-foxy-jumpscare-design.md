@@ -39,12 +39,14 @@ which is why it reads as "relatively frequent" despite the large-sounding denomi
 
 | Question | Decision |
 |---|---|
-| Assets | Real FNAF Withered Foxy sprite + scream. Swappable pack; untracked in git. |
+| Assets | Real FNAF Withered Foxy — **greenscreen video**, keyed at build time. Swappable pack; untracked in git. |
 | Target frequency | ~1–2 weeks for a typical user |
 | Roll unit | One trial per **active** second (faithful to the original) |
 | Desktop clock gating | Only while actively using the PC — recent input, session unlocked |
-| Presentation | Fullscreen, ~1.5s, auto-dismiss, no input blocking, no forced volume |
-| Desktop stack | C# / .NET 8 WinForms |
+| Presentation | Video plays to its natural length, auto-dismiss, no input blocking, no forced volume |
+| Browser look | **Transparent over the live page** — alpha video, page still visible behind Foxy |
+| Desktop look | Fullscreen black |
+| Desktop stack | C# / .NET 8 **WPF** |
 | Repo | Public code, assets gitignored |
 
 ### Derived defaults
@@ -112,13 +114,41 @@ One source tree, two build outputs. `webextension-polyfill` for API parity;
 
 - `chrome.alarms` at 1-minute period drives the tick. Not `setTimeout` — the service
   worker will not be alive to receive it.
-- On fire, `chrome.scripting.executeScript` injects the overlay into the active tab:
-  a `position: fixed; inset: 0; z-index: 2147483647` container holding the image,
-  removed after 1500ms. Guarded by a sentinel element id so it can never double-inject.
-- Audio plays from a **Chrome offscreen document**. Content-script audio is subject to
-  the page's autoplay policy and is silently blocked on any page the user hasn't
-  interacted with. Firefox has no offscreen API and falls back to content-script
-  audio, where it will occasionally be silent — a known, accepted platform difference.
+- On fire, `chrome.scripting.executeScript` injects a single element into the active
+  tab: an **`<iframe>` whose `src` is an extension-origin `overlay.html`**, styled
+  `position: fixed; inset: 0; z-index: 2147483647; border: 0; background: transparent`
+  with `pointer-events: none`. Guarded by a sentinel element id so it can never
+  double-inject. Removed when the video ends.
+- `overlay.html` holds a `<video autoplay>` playing `foxy.webm` (VP9 + alpha) over a
+  transparent background, so the user's actual page stays visible behind Foxy.
+
+### Why an extension-origin iframe, not raw injected elements
+
+Injecting a bare `<video>` into the page looked simpler and is wrong for three
+independent reasons, each of which alone would break it on real sites:
+
+1. **Page CSP.** Sites with a strict `Content-Security-Policy` — GitHub, most banks —
+   block injected media and inline styles outright. An extension-origin document has
+   its own CSP and is unaffected.
+2. **Autoplay policy.** Content-script media inherits the *page's* autoplay permission,
+   so audio is silently blocked on any page the user hasn't clicked. Extension-origin
+   documents are not subject to the page's gesture requirement.
+3. **Page CSS.** Host stylesheets can and do reach injected nodes. An iframe is immune.
+
+This also removes the need for Chrome's offscreen-document audio workaround and the
+Firefox degradation it implied — one mechanism now works identically on both browsers,
+which is a meaningful simplification.
+
+**Fallback:** a page may still restrict `frame-src` and block the iframe. On
+`load` failure the content script falls back to direct element injection, accepting
+possible silence. Both paths are exercised in testing.
+
+### Why WebM, not the source MP4
+
+MP4/H.264 cannot carry an alpha channel, so a transparent overlay is impossible in that
+container regardless of anything else. WebM/VP9 is additionally the safer codec in
+Firefox, where H.264 depends on OS decoders while VP9 ships in-browser. See
+`assets/PACK.md` for the keying pipeline.
 
 ### Constraints
 
@@ -128,7 +158,9 @@ One source tree, two build outputs. `webextension-polyfill` for API parity;
   who sit on restricted pages.
 - Requires the `<all_urls>` host permission. Unavoidable for inject-anywhere behavior;
   it means a scarier install prompt and slower store review.
-- Permissions: `alarms`, `idle`, `storage`, `scripting`, `offscreen`, host `<all_urls>`.
+- Permissions: `alarms`, `idle`, `storage`, `scripting`, host `<all_urls>`. No
+  `offscreen` — the extension-origin iframe removed the need for it.
+- `foxy.webm` must be listed in `web_accessible_resources`, as must `overlay.html`.
 
 ### Options page
 
@@ -158,19 +190,34 @@ comparable. Expected waits differ because the clocks differ (4h/day browsing vs
 
 ## Component: Windows desktop app
 
-.NET 8, `net8.0-windows`, WinForms, single-file publish.
+.NET 8, `net8.0-windows`, **WPF**, single-file publish. The project sets both
+`UseWPF` and `UseWindowsForms` — WPF for the overlay and video, WinForms purely for
+`NotifyIcon`, which WPF has no equivalent of. This keeps the tray icon dependency-free.
+
+WPF rather than WinForms because the asset is video: `MediaElement` decodes H.264
+through Media Foundation with no third-party package, and carries the audio with it.
+WinForms would have needed LibVLCSharp or a WPF interop host to do the same job.
 
 - **Tray menu:** Enabled · Odds · Test Scare · Run at startup · Quit
 - **Idle gating:** `GetLastInputInfo` P/Invoke; `SystemEvents.SessionSwitch` suppresses
   the clock while the session is locked.
-- **Overlay:** one borderless `Form` **per monitor** (`Screen.AllScreens`), `TopMost`,
-  `ShowInTaskbar = false`, bounds set to the screen. `CreateParams` sets
-  `WS_EX_NOACTIVATE` and `ShowWithoutActivation` returns true, so it never steals
-  focus or swallows keystrokes. `PictureBox` in `Zoom` mode on black.
-- **Audio:** `System.Media.SoundPlayer`, hence WAV — zero external dependency.
-- **Teardown:** 1500ms timer closes the overlays. A **separate 3000ms failsafe timer**
-  force-disposes every overlay unconditionally. A bug in the normal path must never be
-  able to leave the user staring at an un-closable fullscreen window.
+- **Overlay:** one borderless `Window` **per monitor**, `WindowStyle = None`,
+  `ResizeMode = NoResize`, `Topmost = true`, `ShowInTaskbar = false`,
+  **`ShowActivated = false`** so it never steals focus or swallows keystrokes,
+  `Background = Black`, hosting a `MediaElement` with `LoadedBehavior = Manual`,
+  `Stretch = Uniform`.
+- **Multi-monitor audio:** only the **primary** screen's overlay plays sound; every
+  other instance sets `IsMuted = true`. Otherwise a three-monitor setup fires three
+  overlapping copies of the scream, slightly out of sync.
+- **DPI:** `Screen.AllScreens` reports *physical pixels* while WPF positions in
+  device-independent units. Window bounds must be converted per-monitor via
+  `VisualTreeHelper.GetDpi` / the window's `CompositionTarget` matrix. Skipping this
+  leaves the overlay mis-sized on any mixed-DPI setup, which is most laptops with an
+  external display.
+- **Teardown:** `MediaElement.MediaEnded` closes the overlays. A **separate failsafe
+  timer at video duration + 1500ms** force-closes every overlay unconditionally. A bug
+  in the normal path — or a video that fails to decode and never raises `MediaEnded` —
+  must never be able to leave the user staring at an un-closable fullscreen window.
 - **Autostart:** off by default, opt-in from the tray, written to
   `HKCU\Software\Microsoft\Windows\CurrentVersion\Run`.
 
@@ -184,9 +231,11 @@ comparable. Expected waits differ because the clocks differ (4h/day browsing vs
 | `oneInN` | `300000` |
 | `tickSeconds` | `30` |
 | `idleThresholdSeconds` | `60` |
-| `durationMs` | `1500` |
-| `failsafeMs` | `3000` |
+| `failsafeMarginMs` | `1500` |
 | `runAtStartup` | `false` |
+
+There is no `durationMs`. On-screen time is the video's own length; `failsafeMarginMs`
+is how long past that the force-close waits before firing.
 
 `state.json` holds `remaining` alongside it.
 
@@ -198,12 +247,25 @@ SmartScreen prompt on first run. Code signing is out of scope for v1.
 
 ## Assets
 
-`assets/` is a swappable pack — image, audio, and a small manifest describing them.
-Neither app hardcodes anything about the contents. If the store build has to switch to
-original art, that is a pack swap and a re-upload, not a code change.
+`assets/` is a swappable pack. Neither app hardcodes anything about the contents, so if
+the store build has to switch to original art, that is a pack swap and a re-upload, not
+a code change.
 
-The files themselves are gitignored (see `.gitignore`); `assets/PACK.md` documents the
-expected filenames and formats so the pack can be reconstituted locally.
+The source asset is a **greenscreen MP4**. It is never consumed directly. A build step
+(`tools/build-assets.mjs`, requires ffmpeg) keys the green and emits the two derived
+formats the targets actually need:
+
+| Output | Format | Consumer | Why |
+|---|---|---|---|
+| `foxy.webm` | VP9 + alpha, Opus | Extension | Only container that carries alpha; safest codec in Firefox |
+| `foxy.mp4` | H.264 over black, AAC | Desktop | `MediaElement` plays it natively; overlay is black anyway |
+
+Keying is `chromakey` + `despill`, with the tuned parameters stored in `pack.json` so a
+rebuild reproduces the tuned result rather than the defaults. The VP9 pass **must** set
+`-auto-alt-ref 0`; alt-ref frames silently destroy the alpha channel.
+
+All media is gitignored (see `.gitignore`), including the source. `assets/PACK.md`
+documents the pipeline so the pack can be reconstituted locally.
 
 ## Testing
 
@@ -217,6 +279,17 @@ The roll is pure and testable on both sides. UI is verified manually.
   - a failed/non-injectable fire does not consume `remaining` (extension only)
 - **`TEST_MODE`** flag forces `oneInN = 5` so the overlay can be exercised in seconds
   rather than days.
+
+Manual verification, per release — these are the things that break on real machines and
+cannot be asserted in a unit test:
+
+- Overlay fires correctly on a **strict-CSP page** (GitHub) and a **plain** page, in
+  both Chrome and Firefox, with audio audible on both
+- The `frame-src`-blocked fallback path actually engages, rather than failing silently
+- No green fringe against a white page and against a dark page
+- Desktop: correct sizing on a **mixed-DPI** two-monitor setup
+- Desktop: exactly one audible audio stream with three monitors attached
+- Desktop: overlay closes when the video file is deliberately corrupted (failsafe path)
 
 ## Out of scope for v1
 
@@ -234,4 +307,7 @@ The roll is pure and testable on both sides. UI is verified manually.
 | DMCA against the repo | Assets gitignored, never pushed |
 | Slow store review from `<all_urls>` | Written permission justification prepared with the submission |
 | SmartScreen warning on the exe | Documented in the README; signing deferred |
-| Silent audio on some Firefox pages | Accepted and documented; Chrome path uses offscreen documents |
+| Green fringe from a bad key | Tuned params committed in `pack.json`; review over both light and dark backgrounds before shipping |
+| Page `frame-src` blocks the overlay iframe | Content script detects load failure and falls back to direct injection |
+| Overlay mis-sized on mixed-DPI multi-monitor | Explicit per-monitor DPI conversion; called out in the desktop section |
+| Video fails to decode, `MediaEnded` never fires | Failsafe timer force-closes regardless of media state |

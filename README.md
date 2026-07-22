@@ -17,10 +17,13 @@ Both are configurable, including a "Terraria faithful" 1-in-10,000 preset.
 
 ## What it does
 
-Foxy slams to fullscreen with the scream for ~1.5 seconds, then disappears. It does not
-block input, does not steal focus, and does not touch your system volume. The desktop
-version only counts seconds where you are actually at the machine — it will not fire at
-an empty desk, and it stays quiet while the session is locked.
+Foxy lunges at you with the scream, then disappears. In the browser he's **transparent
+over your actual page** — your inbox, your PR, still visible behind him. On the desktop
+he takes the whole screen.
+
+It does not block input, does not steal focus, and does not touch your system volume.
+The desktop version only counts seconds where you are actually at the machine — it will
+not fire at an empty desk, and it stays quiet while the session is locked.
 
 ⚠️ **Photosensitivity and volume warning.** This is a sudden loud image by design. Don't
 install it if that's a problem for you, and think twice about headphones at 2am.
@@ -37,9 +40,12 @@ docs/         design specs
 
 ## Build
 
-Requires Node 24+, .NET 8 SDK, git.
+Requires Node 24+, .NET 8 SDK, ffmpeg, git.
 
 ```powershell
+# Assets — keys the greenscreen source into the two derived formats
+node tools/build-assets.mjs
+
 # Extension -> dist/chrome, dist/firefox
 npm --prefix extension install
 npm --prefix extension run build
@@ -48,7 +54,8 @@ npm --prefix extension run build
 dotnet publish desktop/FoxyJumpscare -c Release
 ```
 
-Populate `assets/` first, per [`assets/PACK.md`](assets/PACK.md) — the builds expect it.
+Drop the greenscreen source into `assets/` first, per
+[`assets/PACK.md`](assets/PACK.md) — every build expects the derived files.
 
 Set `TEST_MODE` to force 1-in-5 odds so it fires in seconds instead of days.
 
@@ -61,6 +68,6 @@ Set `TEST_MODE` to force 1-in-5 odds so it fires in seconds instead of days.
 
 ## Assets and licensing
 
-The code is this project's. The Withered Foxy sprite and scream are **not** — they are
+The code is this project's. The Withered Foxy footage and audio are **not** — they are
 Five Nights at Freddy's material and are deliberately excluded from this repository.
 The asset pack is swappable by design; see [`assets/PACK.md`](assets/PACK.md).

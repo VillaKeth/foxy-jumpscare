@@ -2,6 +2,9 @@
 # foxy.png / scream.wav are copyrighted FNAF material. Keeping them out of the
 # repo means a DMCA notice costs us a re-upload, not the repository.
 # Populate locally per assets/PACK.md.
+assets/*.mp4
+assets/*.webm
+assets/*.mov
 assets/*.png
 assets/*.jpg
 assets/*.wav

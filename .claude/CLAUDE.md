@@ -23,15 +23,28 @@ them out deliberately — do not add them, and do not `git add -f` them.
 **A failed jumpscare must not consume the roll.** If injection fails (restricted page)
 or an overlay can't be shown, leave `remaining` at 0 and retry next tick.
 
-**The overlay always has a hard failsafe teardown.** Normal dismissal is ~1.5s; an
-independent timer force-disposes at 3s regardless. Never ship a path where a bug can
-leave an un-closable fullscreen window on a user's screen.
+**The overlay always has a hard failsafe teardown.** Normal dismissal is the video's
+`ended` / `MediaEnded` event; an independent timer force-closes at video duration +
+1.5s regardless of media state. A video that fails to decode never raises `ended`.
+Never ship a path where a bug can leave an un-closable fullscreen window on a screen.
+
+**The browser overlay is an extension-origin iframe, not injected elements.** This is
+load-bearing for three separate reasons — page CSP blocks injected media on sites like
+GitHub, page autoplay policy silently kills content-script audio, and host CSS leaks
+into injected nodes. Do not "simplify" it back to a raw `<video>` node.
+
+**The source greenscreen video is never consumed directly.** `tools/build-assets.mjs`
+keys it into `foxy.webm` (VP9+alpha, extension) and `foxy.mp4` (H.264 over black,
+desktop). The VP9 pass must pass `-auto-alt-ref 0` or the alpha channel is destroyed.
 
 ## Toolchain
 
-Node 24 / npm 11, .NET 8 SDK, git. No pnpm, no rust on this box.
+Node 24 / npm 11, .NET 8 SDK, ffmpeg, git. No pnpm, no rust on this box.
 
 ```powershell
+# assets — run first; both builds expect the derived files
+node tools/build-assets.mjs
+
 # extension
 npm --prefix extension install
 npm --prefix extension run build      # -> dist/chrome, dist/firefox
