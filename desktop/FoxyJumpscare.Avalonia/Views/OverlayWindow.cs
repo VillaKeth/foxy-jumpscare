@@ -53,16 +53,14 @@ public static class OverlayWindow
     {
         if (_libvlc is null)
         {
+            // Must come first: on Linux/macOS the system libvlc is versioned
+            // (libvlc.so.5) and .NET's default probe never finds it.
+            Platform.VlcNative.Register();
+
             // Fully qualified: bare "Core" would bind to the FoxyJumpscare.Core
             // namespace, not LibVLCSharp's Core class.
             LibVLCSharp.Shared.Core.Initialize();
 
-            // Windows default is DirectSound, not libVLC's own default of
-            // mmdevice (WASAPI): WASAPI crashed this STA app with an
-            // AccessViolation once audio actually played, and DirectSound is a
-            // simpler, mature module without the COM-threading trouble. Other
-            // OSes keep their sensible defaults (PulseAudio/PipeWire, CoreAudio).
-            // FOXY_AOUT overrides for debugging (directsound, waveout, adummy…).
             // WaveOut on Windows, not libVLC's own default of mmdevice
             // (WASAPI): WASAPI crashed this STA app once audio actually played,
             // and the DirectSound module opened a device that never reached the
@@ -71,7 +69,14 @@ public static class OverlayWindow
             // their sensible defaults (PulseAudio/PipeWire, CoreAudio).
             // FOXY_AOUT overrides.
             var aout = Environment.GetEnvironmentVariable("FOXY_AOUT");
-            if (string.IsNullOrEmpty(aout) && OperatingSystem.IsWindows())
+
+            // FOXY_MUTE has to pick a silent OUTPUT MODULE, not just set
+            // MediaPlayer.Mute: libVLC drops a mute/volume set that lands
+            // before the audio output exists, and the trace showed mute=False
+            // reading straight back. adummy cannot make a sound.
+            if (MuteAll && string.IsNullOrEmpty(aout))
+                aout = "adummy";
+            else if (string.IsNullOrEmpty(aout) && OperatingSystem.IsWindows())
                 aout = "waveout";
 
             _libvlc = string.IsNullOrEmpty(aout) ? new LibVLC() : new LibVLC($"--aout={aout}");
@@ -228,7 +233,21 @@ public static class OverlayWindow
     {
         // Physical-pixel position, then FullScreen fills that monitor - which
         // sidesteps per-monitor DPI-to-DIP conversion.
-        w.Position = screen.Bounds.Position;
+        var bounds = screen.Bounds;
+        w.Position = bounds.Position;
+
+        // Size the window explicitly as well, because FullScreen is only a
+        // REQUEST: on X11 it is _NET_WM_STATE_FULLSCREEN, which a window
+        // manager has to honour. Measured on a bare X server with no WM, the
+        // scare rendered at the video's natural size in the top-left corner
+        // instead of covering the screen. Sizing first means the overlay
+        // covers the monitor even if the request is ignored; where it is
+        // honoured, FullScreen wins and this is a no-op.
+        // Bounds are physical pixels, Width/Height are DIPs.
+        var scaling = screen.Scaling <= 0 ? 1 : screen.Scaling;
+        w.Width = bounds.Width / scaling;
+        w.Height = bounds.Height / scaling;
+
         w.WindowState = WindowState.FullScreen;
     }
 
