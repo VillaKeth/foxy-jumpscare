@@ -29,6 +29,10 @@
     <!-- Optional so the app builds before the asset pack exists. -->
     <None Include="..\..\assets\foxy.mp4" Condition="Exists('..\..\assets\foxy.mp4')"
           CopyToOutputDirectory="PreserveNewest" Link="foxy.mp4" />
+    <!-- Tray icon, built from a source still by tools/build-tray-icon.ps1.
+         Also optional: without it the tray falls back to a generic icon. -->
+    <None Include="..\..\assets\foxy.ico" Condition="Exists('..\..\assets\foxy.ico')"
+          CopyToOutputDirectory="PreserveNewest" Link="foxy.ico" />
   </ItemGroup>
 
 </Project>

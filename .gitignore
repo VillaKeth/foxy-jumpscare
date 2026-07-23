@@ -15,6 +15,7 @@ assets/*.jpg
 assets/*.wav
 assets/*.ogg
 assets/*.mp3
+assets/*.ico
 
 # --- Node / extension ---
 node_modules/

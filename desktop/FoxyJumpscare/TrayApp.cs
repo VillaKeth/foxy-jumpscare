@@ -51,7 +51,7 @@ public sealed class TrayApp : IDisposable
 
     private void BuildTrayIcon()
     {
-        _icon.Icon = System.Drawing.SystemIcons.Application;
+        _icon.Icon = LoadTrayIcon();
         _icon.Text = "Foxy Jumpscare";
         _icon.Visible = true;
 
@@ -115,6 +115,30 @@ public sealed class TrayApp : IDisposable
         menu.Items.Add(quit);
 
         _icon.ContextMenuStrip = menu;
+    }
+
+    /// <summary>
+    /// The tray icon, built from the asset pack by tools/build-tray-icon.ps1.
+    /// Falls back to a generic icon when the pack is absent, so a source
+    /// checkout without assets still runs.
+    /// </summary>
+    private static System.Drawing.Icon LoadTrayIcon()
+    {
+        var path = Path.Combine(AppContext.BaseDirectory, "foxy.ico");
+        if (File.Exists(path))
+        {
+            try
+            {
+                // Ask for the frame nearest the tray's icon size at this DPI,
+                // rather than letting a 256px frame be squashed down to 16.
+                return new System.Drawing.Icon(path, Forms.SystemInformation.SmallIconSize);
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"[foxy] tray icon load failed, using default: {ex.Message}");
+            }
+        }
+        return System.Drawing.SystemIcons.Application;
     }
 
     private void OnTick(object? sender, ElapsedEventArgs e)

@@ -15,6 +15,7 @@ build step below.
 | `foxy-src.mp4` | no | **Source.** The raw greenscreen clip, as downloaded. Never consumed directly by either app. |
 | `foxy.webm` | no | *Derived.* VP9 + alpha, Opus audio. Extension only. |
 | `foxy.mp4` | no | *Derived.* H.264 keyed over black, AAC audio. Desktop only. |
+| `foxy.ico` | no | *Derived.* Desktop tray icon, cropped to the head from a source still. |
 | `pack.json` | yes | Manifest. |
 
 Two derived formats because the targets genuinely differ:
@@ -105,6 +106,26 @@ a canvas, and read the pixels. Against the synthetic test clip this returns
 
 Playback length comes from the video itself, not from config. The keying values live
 here so a rebuild reproduces the tuned result rather than the defaults.
+
+## The tray icon
+
+The desktop tray icon is a separate derived asset, cropped to Foxy's head from a source
+still (a full-body render is an unreadable smudge at 16px). Like the video, it is
+gitignored and never committed.
+
+```powershell
+pwsh tools/build-tray-icon.ps1 -Source "$HOME\Downloads\foxy.png"
+```
+
+Emits `assets/foxy.ico`, a multi-resolution icon (16–256px, PNG frames). The desktop
+build copies it next to the exe; without it the tray falls back to a generic icon. The
+default crop suits the Withered Foxy still in this pack — override with `-CropX/-CropY/
+-CropSide` for a different image.
+
+This is deliberately the desktop only. The **extension** icon ships original art
+(`tools/make-icons.mjs`), because that icon is the one image that lands on the public
+store listing, in the toolbar, and in AMO's public API — the most-scanned placement
+there is, and the wrong place for copyrighted frames.
 
 ## Swapping the pack
 
