@@ -56,7 +56,32 @@ public static class OverlayWindow
             // Fully qualified: bare "Core" would bind to the FoxyJumpscare.Core
             // namespace, not LibVLCSharp's Core class.
             LibVLCSharp.Shared.Core.Initialize();
-            _libvlc = new LibVLC();
+
+            // Windows default is DirectSound, not libVLC's own default of
+            // mmdevice (WASAPI): WASAPI crashed this STA app with an
+            // AccessViolation once audio actually played, and DirectSound is a
+            // simpler, mature module without the COM-threading trouble. Other
+            // OSes keep their sensible defaults (PulseAudio/PipeWire, CoreAudio).
+            // FOXY_AOUT overrides for debugging (directsound, waveout, adummy…).
+            // WaveOut on Windows, not libVLC's own default of mmdevice
+            // (WASAPI): WASAPI crashed this STA app once audio actually played,
+            // and the DirectSound module opened a device that never reached the
+            // speakers. WaveOut routes to the system default output - the one
+            // the user actually hears - and is rock-simple. Other OSes keep
+            // their sensible defaults (PulseAudio/PipeWire, CoreAudio).
+            // FOXY_AOUT overrides.
+            var aout = Environment.GetEnvironmentVariable("FOXY_AOUT");
+            if (string.IsNullOrEmpty(aout) && OperatingSystem.IsWindows())
+                aout = "waveout";
+
+            _libvlc = string.IsNullOrEmpty(aout) ? new LibVLC() : new LibVLC($"--aout={aout}");
+
+            if (Trace)
+                _libvlc.Log += (_, e) =>
+                {
+                    if (e.Level >= LogLevel.Warning)
+                        Console.Error.WriteLine($"[vlc:{e.Level}] {e.Module}: {e.Message}");
+                };
         }
         return _libvlc;
     }
@@ -119,7 +144,7 @@ public static class OverlayWindow
             player.Playing += (_, _) =>
             {
                 // Re-assert after playback starts: libVLC can ignore volume/mute
-                // set before Play, which left the scream silent.
+                // set before Play.
                 player.Volume = 100;
                 player.Mute = MuteAll;
                 if (Trace)
@@ -248,5 +273,6 @@ public static class OverlayWindow
         });
     }
 
-    private static void Log(string message) => Console.Error.WriteLine($"[foxy overlay] {message}");
+    private static void Log(string message) =>
+        Console.Error.WriteLine($"[foxy overlay +{Environment.TickCount & 0xFFFFF}ms] {message}");
 }
