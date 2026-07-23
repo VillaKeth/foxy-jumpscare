@@ -84,4 +84,19 @@ public class StoreTests : IDisposable
     {
         Assert.Contains("FoxyJumpscare", Store.DefaultDirectory);
     }
+
+    [Fact]
+    public void DefaultDirectory_IsAbsolute()
+    {
+        // A relative config path is not a cosmetic problem. On Unix with no
+        // HOME set, GetFolderPath returns "" and Path.Combine produced the
+        // bare name "FoxyJumpscare", which resolved against the working
+        // directory - normally the app's own folder, where a file of that
+        // exact name already exists. CreateDirectory then threw "The file
+        // already exists" and the packaged Linux build died on startup.
+        Assert.True(Path.IsPathRooted(Store.DefaultDirectory),
+            $"config directory must be absolute, got '{Store.DefaultDirectory}'");
+        Assert.True(Path.IsPathRooted(Store.ConfigRoot),
+            $"config root must be absolute, got '{Store.ConfigRoot}'");
+    }
 }

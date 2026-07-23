@@ -176,6 +176,34 @@ the WPF app.
 `Program.cs --probe-idle` runs the platform layer with no GUI, for checking the
 per-OS idle query on a machine you cannot eyeball.
 
+## Shipping a Linux build
+
+```powershell
+pwsh tools/publish-desktop-linux.ps1     # -> dist/desktop/FoxyJumpscare-linux-x64.tar.gz
+```
+
+Self-contained (~36 MB): the .NET runtime is bundled, so the recipient installs
+nothing but their distro's VLC libraries, which INSTALL.txt lists per distro.
+The archive is built through WSL so the binary keeps its executable bit — a tar
+written on Windows records mode 0666 and the recipient gets "permission denied".
+
+Verify the archive the way a recipient would experience it, on a stock Ubuntu
+that has never had .NET installed:
+
+```bash
+docker build -f docker/linux-package.ubuntu.Dockerfile -t foxy-package-test docker/
+docker run --rm -v /path/to/dist:/pkg:ro -v /tmp/out:/out foxy-package-test
+```
+
+This is not the same test as `run-linux-verify.sh`, and it caught a bug that
+one could not: the build images have the SDK, which masks anything the packaged
+app gets wrong about running without it. On the first run the packaged app died
+before drawing anything, because `GetFolderPath(ApplicationData)` returns an
+empty string when `HOME` is unset, `Path.Combine` turned that into the relative
+path `FoxyJumpscare`, and creating it collided with the executable of the same
+name in the working directory. `Store.ConfigRoot` now always returns an
+absolute path, and a failed settings write no longer aborts startup.
+
 ## Next steps, in order
 
 1. Run on a real Mac; fix what `MacPlatform.cs` got wrong.

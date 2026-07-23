@@ -39,13 +39,23 @@ public sealed class TrayController : IDisposable
     public void Start()
     {
         _config = Store.LoadConfig(_dir);
-        Store.SaveConfig(_dir, _config);
-
         _state = Store.LoadState(_dir);
         if (_state.Remaining <= 0)
-        {
             _state.Remaining = Roll.DrawRemaining(_config.OneInN);
+
+        // Settings that cannot be written must not stop the app running. A
+        // read-only or unwritable config directory used to throw out of here,
+        // before any window or tray icon existed, so the app simply died on
+        // startup with a stack trace the user never saw. Loading already falls
+        // back to defaults for the same reason; saving now matches.
+        try
+        {
+            Store.SaveConfig(_dir, _config);
             Store.SaveState(_dir, _state);
+        }
+        catch (Exception ex)
+        {
+            Console.Error.WriteLine($"[foxy] settings not saved ({_dir}): {ex.Message}");
         }
 
         BuildTray();

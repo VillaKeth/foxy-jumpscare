@@ -96,8 +96,11 @@ public sealed class LinuxPlatform : IPlatformServices
 
     private sealed class XdgAutostart : IAutostart
     {
+        // Store.ConfigRoot, not GetFolderPath directly: the latter returns ""
+        // when HOME is unset, which would put the autostart entry at a
+        // relative path inside whatever directory the app happened to start in.
         private static string DesktopPath => System.IO.Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
+            FoxyJumpscare.Core.Store.ConfigRoot,
             "autostart", "foxyjumpscare.desktop");
 
         public bool IsEnabled => System.IO.File.Exists(DesktopPath);
