@@ -7,9 +7,17 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <BuiltInComInteropSupport>true</BuiltInComInteropSupport>
     <AvaloniaUseCompiledBindingsByDefault>true</AvaloniaUseCompiledBindingsByDefault>
+    <!-- The overlay copies decoded video frames into a shared bitmap with a
+         per-row memcpy, so every monitor shows the same frame in lock-step. -->
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <AssemblyName>FoxyJumpscare</AssemblyName>
     <RootNamespace>FoxyJumpscare</RootNamespace>
+
+    <!-- Embedded exe icon: Task Manager, Explorer, Alt-Tab. The settings window
+         also sets it at runtime for its taskbar button. Conditional on the
+         gitignored asset, so a bare checkout still builds. -->
+    <ApplicationIcon Condition="Exists('..\..\assets\foxy.ico')">..\..\assets\foxy.ico</ApplicationIcon>
   </PropertyGroup>
 
   <ItemGroup>

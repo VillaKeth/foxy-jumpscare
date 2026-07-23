@@ -1,39 +1,52 @@
+using System.Runtime.InteropServices;
+using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Layout;
 using Avalonia.Media;
+using Avalonia.Media.Imaging;
 using Avalonia.Platform;
 using Avalonia.Threading;
-using LibVLCSharp.Avalonia;
 using LibVLCSharp.Shared;
 
 namespace FoxyJumpscare.Views;
 
 /// <summary>
-/// The fullscreen scare, on every monitor, with an independent failsafe
-/// teardown. Video plays through LibVLCSharp - the one mature cross-platform
-/// media path for Avalonia; WPF's MediaElement has no equivalent here.
+/// The fullscreen scare, on every monitor, in sync.
 ///
-/// One decoder per monitor rather than mirroring a single one, because
-/// LibVLCSharp binds one MediaPlayer to one VideoView. All but the first are
-/// muted, so the scream plays once. The overlay ALWAYS tears itself down:
-/// normal dismissal is the primary player's EndReached, and an independent
-/// hard timer closes everything regardless, so a video that never decodes
-/// cannot strand a fullscreen window on screen.
+/// ONE decoder, mirrored to every screen - the same lesson the WPF build
+/// learned. libVLC renders into a single shared buffer via software callbacks;
+/// that buffer is copied into one <see cref="WriteableBitmap"/> shown by an
+/// Image on each monitor. Because every monitor draws the same bitmap, they are
+/// identical frame-for-frame - no per-decoder drift, and the scream (one
+/// player) plays once.
+///
+/// The overlay ALWAYS tears itself down: EndReached is the normal dismissal, an
+/// independent hard timer is the backstop, and teardown stops the player before
+/// freeing the buffer so a late callback can never touch freed memory.
 /// </summary>
 public static class OverlayWindow
 {
     private static readonly bool Trace =
         Environment.GetEnvironmentVariable("FOXY_TRACE") == "1";
-
-    // Mutes even the primary player. For testing without a scream, and it is
-    // the honest way to "leave it armed but silent while I work".
     private static readonly bool MuteAll =
         Environment.GetEnvironmentVariable("FOXY_MUTE") == "1";
 
+    // Kept in static fields so the GC cannot collect the delegates while libVLC
+    // still holds native pointers to them.
+    private static readonly MediaPlayer.LibVLCVideoLockCb _lockCb = OnLock;
+    private static readonly MediaPlayer.LibVLCVideoDisplayCb _displayCb = OnDisplay;
+
     private static LibVLC? _libvlc;
+    private static MediaPlayer? _player;
+    private static Media? _media;
+    private static WriteableBitmap? _bitmap;
+    private static IntPtr _buffer;
+    private static int _width, _height, _stride;
+    private static volatile bool _tearing;
+    private static int _frames;
+
     private static readonly List<Window> _windows = new();
-    private static readonly List<VideoView> _views = new();
-    private static readonly List<MediaPlayer> _players = new();
-    private static readonly List<Media> _media = new();
+    private static readonly List<Image> _images = new();
 
     private static LibVLC Vlc()
     {
@@ -50,6 +63,7 @@ public static class OverlayWindow
     public static void ShowAll(string? videoPath, int failsafeMarginMs)
     {
         Close(); // never stack overlays
+        _tearing = false;
 
         var probe = BuildWindow();
         probe.Show();
@@ -66,56 +80,108 @@ public static class OverlayWindow
             Place(_windows[i], screens[i]);
 
         if (videoPath is not null)
-        {
-            try { StartVideo(videoPath); }
-            catch (Exception ex) { Log($"video start failed: {ex.Message}"); }
-        }
+            StartVideo(videoPath);
 
-        // The hard failsafe. Independent of media state: even if nothing ever
-        // decodes or EndReached never fires, the overlay is gone by now.
+        // The hard failsafe: independent of media state. Even if nothing ever
+        // decodes, the overlay is gone by now.
         var hardMs = Math.Max(4000, failsafeMarginMs + 8000);
         DispatcherTimer.RunOnce(Close, TimeSpan.FromMilliseconds(hardMs));
     }
 
-    private static void StartVideo(string videoPath)
+    private static async void StartVideo(string videoPath)
     {
-        var vlc = Vlc();
-
-        for (var i = 0; i < _windows.Count; i++)
+        try
         {
-            var player = new MediaPlayer(vlc) { Mute = i != 0 || MuteAll }; // scream once
-            var view = new VideoView { MediaPlayer = player };
-            _windows[i].Content = view;
-
-            // FromPath, not a Uri: the install path legitimately contains
-            // spaces, which a file:// Uri would have to escape.
+            var vlc = Vlc();
             var media = new Media(vlc, videoPath, FromType.FromPath);
-            _media.Add(media);
-            _players.Add(player);
-            _views.Add(view);
+
+            // Parse for the real dimensions rather than assuming; fall back to
+            // 720p if the parse turns up nothing.
+            await media.Parse(MediaParseOptions.ParseLocal);
+            var track = media.Tracks.FirstOrDefault(t => t.TrackType == TrackType.Video);
+            _width = (int)(track.Data.Video.Width == 0 ? 1280 : track.Data.Video.Width);
+            _height = (int)(track.Data.Video.Height == 0 ? 720 : track.Data.Video.Height);
+            _stride = _width * 4;
+
+            _buffer = Marshal.AllocHGlobal(_stride * _height);
+            _bitmap = new WriteableBitmap(
+                new PixelSize(_width, _height), new Vector(96, 96),
+                PixelFormat.Bgra8888, AlphaFormat.Opaque);
+
+            foreach (var image in _images) image.Source = _bitmap;
+
+            var player = new MediaPlayer(vlc) { Mute = MuteAll };
+            player.SetVideoFormat("RV32", (uint)_width, (uint)_height, (uint)_stride);
+            player.SetVideoCallbacks(_lockCb, null, _displayCb);
+            player.EndReached += (_, _) => Dispatcher.UIThread.Post(Close);
+            if (Trace)
+            {
+                player.Playing += (_, _) => Log("playing");
+                player.EndReached += (_, _) => Log("end reached");
+                player.EncounteredError += (_, _) => Log("libvlc error");
+            }
+
+            _media = media;
+            _player = player;
             player.Play(media);
         }
-
-        var primary = _players[0];
-        // Stop() must not be called from inside the EndReached callback (it
-        // deadlocks libVLC), so bounce to the UI thread.
-        primary.EndReached += (_, _) => Dispatcher.UIThread.Post(Close);
-        if (Trace)
+        catch (Exception ex)
         {
-            primary.Playing += (_, _) => Log("playing");
-            primary.EndReached += (_, _) => Log("end reached");
-            primary.EncounteredError += (_, _) => Log("libvlc error");
+            Log($"video start failed: {ex.Message}");
         }
     }
 
-    private static Window BuildWindow() => new()
+    // --- libVLC software-render callbacks (called on a libVLC thread) --------
+
+    private static IntPtr OnLock(IntPtr opaque, IntPtr planes)
     {
-        SystemDecorations = SystemDecorations.None,
-        Background = Brushes.Black,
-        Topmost = true,
-        ShowInTaskbar = false,
-        CanResize = false,
-    };
+        if (_buffer != IntPtr.Zero) Marshal.WriteIntPtr(planes, _buffer);
+        return _buffer;
+    }
+
+    private static unsafe void OnDisplay(IntPtr opaque, IntPtr picture)
+    {
+        // Copy the freshly decoded frame into the shared bitmap on the UI
+        // thread, then repaint every monitor's Image from it.
+        Dispatcher.UIThread.Post(() =>
+        {
+            if (_tearing || _bitmap is null || _buffer == IntPtr.Zero) return;
+
+            using (var fb = _bitmap.Lock())
+            {
+                var src = (byte*)_buffer;
+                var dst = (byte*)fb.Address;
+                for (var y = 0; y < _height; y++)
+                    Buffer.MemoryCopy(src + y * _stride, dst + y * fb.RowBytes, fb.RowBytes, _stride);
+            }
+
+            foreach (var image in _images) image.InvalidateVisual();
+            _frames++;
+        }, DispatcherPriority.Render);
+    }
+
+    // --- windows -------------------------------------------------------------
+
+    private static Window BuildWindow()
+    {
+        var image = new Image
+        {
+            Stretch = Stretch.Uniform,
+            HorizontalAlignment = HorizontalAlignment.Stretch,
+            VerticalAlignment = VerticalAlignment.Stretch,
+        };
+        _images.Add(image);
+
+        return new Window
+        {
+            SystemDecorations = SystemDecorations.None,
+            Background = Brushes.Black,
+            Topmost = true,
+            ShowInTaskbar = false,
+            CanResize = false,
+            Content = image,
+        };
+    }
 
     private static void Place(Window w, Screen screen)
     {
@@ -127,17 +193,18 @@ public static class OverlayWindow
 
     public static void Close()
     {
-        // Order matters, and getting it wrong is a native use-after-free.
-        // Detach each player from its VideoView FIRST, so closing the window
-        // does not tear down a native host that still points at a player we are
-        // about to dispose. Then stop, then close windows, then dispose.
-        foreach (var view in _views)
-        {
-            try { view.MediaPlayer = null; } catch { }
-        }
-        _views.Clear();
+        if (Trace && _windows.Count > 0)
+            Log($"closing: {_frames} frames rendered across {_windows.Count} monitor(s)");
+        _tearing = true;
+        _frames = 0;
 
-        foreach (var player in _players)
+        // Stop the player FIRST, so no lock/display callback can run once the
+        // buffer is freed below. Stop() blocks until playback has ended.
+        var player = _player;
+        var media = _media;
+        _player = null;
+        _media = null;
+        if (player is not null)
         {
             try { player.Stop(); } catch { }
         }
@@ -147,20 +214,21 @@ public static class OverlayWindow
             try { w.Close(); } catch { }
         }
         _windows.Clear();
+        _images.Clear();
+        _bitmap = null;
 
-        // Dispose the now-detached, stopped players off the UI thread after a
-        // short beat. libVLC can fault if a player is disposed while its vout
-        // is still tearing down on another thread; letting the windows finish
-        // closing first avoids the race.
-        var players = _players.ToList();
-        var media = _media.ToList();
-        _players.Clear();
-        _media.Clear();
+        var buffer = _buffer;
+        _buffer = IntPtr.Zero;
+
+        // Dispose off the UI thread after a beat: libVLC can fault if a player
+        // is disposed while its threads are still unwinding. The buffer is
+        // freed only after the player is gone, so no callback outlives it.
         Task.Run(async () =>
         {
             await Task.Delay(300);
-            foreach (var p in players) { try { p.Dispose(); } catch { } }
-            foreach (var m in media) { try { m.Dispose(); } catch { } }
+            try { player?.Dispose(); } catch { }
+            try { media?.Dispose(); } catch { }
+            if (buffer != IntPtr.Zero) Marshal.FreeHGlobal(buffer);
         });
     }
 

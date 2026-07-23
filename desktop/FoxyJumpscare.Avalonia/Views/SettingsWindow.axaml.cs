@@ -31,6 +31,7 @@ public partial class SettingsWindow : Window
     {
         _controller = controller;
         InitializeComponent();
+        LoadIcon();
 
         _choices = new List<OddsChoice>
         {
@@ -54,6 +55,18 @@ public partial class SettingsWindow : Window
         _timer.Tick += (_, _) => RefreshCountdown();
         _timer.Start();
         Closed += (_, _) => _timer.Stop();
+    }
+
+    // The taskbar / title-bar icon. The tray icon is set separately in
+    // TrayController; this is what shows when the settings window is open.
+    private void LoadIcon()
+    {
+        try
+        {
+            var path = System.IO.Path.Combine(AppContext.BaseDirectory, "foxy.ico");
+            if (System.IO.File.Exists(path)) Icon = new WindowIcon(path);
+        }
+        catch { /* generic icon is fine */ }
     }
 
     private void Load()

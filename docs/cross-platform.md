@@ -27,13 +27,16 @@ never executed on that OS — treat it as a draft until someone runs it there.
 
 ## The honest gaps
 
-1. **Video plays, on Windows.** The overlay decodes and plays the clip through
-   LibVLCSharp, on every monitor, muted on all but the primary so the scream
-   sounds once, and tears down cleanly (a native use-after-free during teardown
-   is avoided by detaching each player from its VideoView before disposing).
-   The native libVLC ships with the Windows build via `VideoLAN.LibVLC.Windows`.
-   On Linux and macOS the app expects a **system libvlc** (`apt install vlc` /
-   `brew install vlc`) — this has not been run there yet.
+1. **Video plays, in sync, on Windows.** ONE decoder, mirrored to every
+   monitor — the same lesson the WPF build learned. libVLC software-renders into
+   a single shared buffer, copied into one `WriteableBitmap` that every screen's
+   Image draws, so the monitors are identical frame-for-frame with no
+   per-decoder drift. One player means the scream plays once. Verified: 22
+   frames rendered across two monitors from a single decoder, clean teardown, no
+   crash. Teardown stops the player before freeing the buffer, so a late
+   callback can never touch freed memory. Native libVLC ships with the Windows
+   build via `VideoLAN.LibVLC.Windows`; Linux and macOS expect a **system
+   libvlc** (`apt install vlc` / `brew install vlc`), unrun there.
 
    `FOXY_MUTE=1` mutes even the primary player, and `FOXY_TRACE=1` logs
    playback state to stderr — both were added for headless verification and are
