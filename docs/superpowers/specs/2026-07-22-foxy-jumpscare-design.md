@@ -274,7 +274,7 @@ formats the targets actually need:
 | Output | Format | Consumer | Why |
 |---|---|---|---|
 | `foxy.webm` | VP9 + alpha, Opus | Extension | Only container that carries alpha; safest codec in Firefox |
-| `foxy.mp4` | H.264 over black, AAC | Desktop | `MediaElement` plays it natively; overlay is black anyway |
+| `foxy.mp4` | VP9 over black, AAC | Desktop | Royalty-free decoder ships with VLC on every distro; overlay is black anyway. (Originally H.264, changed after Fedora/Arch shipped VLC without an H.264 decoder — a silent black screen there.) |
 
 Keying is `chromakey` + `despill`, with the tuned parameters stored in `pack.json` so a
 rebuild reproduces the tuned result rather than the defaults. The VP9 pass sets

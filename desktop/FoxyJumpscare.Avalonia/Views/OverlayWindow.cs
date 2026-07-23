@@ -183,9 +183,10 @@ public static class OverlayWindow
             // way and sends you hunting for a NuGet package that does not
             // apply.
             if (!OperatingSystem.IsWindows())
-                Log("hint: the system VLC libraries AND their plugins are both needed - " +
+                Log("hint: the system VLC libraries are needed - " +
                     "apt install libvlc5 vlc-plugin-base / " +
-                    "dnf install vlc-libs vlc-plugins-base vlc-plugin-ffmpeg / " +
+                    "dnf install vlc-libs vlc-plugins-base / " +
+                    "pacman -S vlc / " +
                     "brew install vlc");
         }
     }

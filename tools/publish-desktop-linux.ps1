@@ -70,12 +70,15 @@ STEP 1. Install the VLC libraries. This is the only thing you need that is not
             sudo apt install libvlc5 vlc-plugin-base
 
         Fedora:
-            sudo dnf install vlc-libs vlc-plugins-base vlc-plugin-ffmpeg
+            sudo dnf install vlc-libs vlc-plugins-base
 
-        Arch:
+        Arch / EndeavourOS / Manjaro:
             sudo pacman -S vlc
 
-        (If you already have the VLC player installed, you have these.)
+        (If you already have the VLC media player installed, you have these.)
+        The base package is enough on every distro - the scare video is VP9,
+        whose decoder ships with VLC everywhere. No extra codec package is
+        needed.
 
 STEP 2. Unpack and run:
 

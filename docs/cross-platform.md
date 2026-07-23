@@ -94,24 +94,48 @@ Two properties of the container matter and are easy to lose:
 
 ### Runtime dependencies, as measured
 
-| | Debian / Ubuntu | Fedora |
-|---|---|---|
-| Video | `libvlc5`, `vlc-plugin-base` | `vlc-libs`, `vlc-plugins-base`, **`vlc-plugin-ffmpeg`** |
-| Idle | `libxss1` | `libXScrnSaver` |
-| GUI | `libx11-6`, `libice6`, `libsm6`, `libfontconfig1`, plus any font | `libX11`, `libICE`, `libSM`, `fontconfig`, plus any font |
+The scare video is **VP9** (see "The codec" below), whose decoder ships in the
+base VLC package everywhere, so no distro needs an extra codec package:
 
-Fedora needs two packages Ubuntu does not, and both fail confusingly:
+| | Debian / Ubuntu | Fedora | Arch / EndeavourOS |
+|---|---|---|---|
+| Video | `libvlc5`, `vlc-plugin-base` | `vlc-libs`, `vlc-plugins-base` | `vlc` |
+| Idle | `libxss1` | `libXScrnSaver` | `libxss` |
+| GUI | `libx11-6`, `libice6`, `libsm6`, `libfontconfig1`, plus any font | `libX11`, `libICE`, `libSM`, `fontconfig`, plus any font | `libx11`, `libice`, `libsm`, `fontconfig`, plus any font |
 
-- Without `vlc-plugins-base`, `vlc-libs` installs the library beside an empty
-  plugin directory and libVLC will not instantiate — reporting a missing
-  *NuGet* package, which is not the problem.
-- Without `vlc-plugin-ffmpeg` there is no `libavcodec_plugin.so`, and playback
-  dies with ``Codec `h264' ... is not supported`` while everything else looks
-  healthy. Fedora splits it out because it is the plugin that drags in ffmpeg.
+One thing on Fedora is still worth knowing even though the app no longer trips
+it: `vlc-plugins-base` is not optional. `vlc-libs` alone installs the library
+beside an empty plugin directory, and libVLC then fails to instantiate —
+reporting a missing *NuGet* package, which is not the problem. The app prints
+the per-distro package list to stderr when video fails to start, because
+LibVLCSharp's own message points somewhere useless.
 
-Both are in Fedora's own repositories; RPM Fusion is *not* required. The app
-prints this package list to stderr when video fails, because LibVLCSharp's own
-message points somewhere useless.
+### The codec: VP9, not H.264
+
+`foxy.mp4` holds **VP9** video, not H.264, and this is load-bearing on Linux.
+H.264 is patent-encumbered, so Fedora and Arch ship their VLC *without* an
+H.264 decoder — installing the full `vlc` player is not enough on Arch. The
+scare was then a silent black screen there: libVLC loaded, every other plugin
+loaded, and only the H.264 frames never decoded (`Codec `h264' ... is not
+supported`, `0 frames rendered`). This was found by running the shipped tarball
+in an Arch container mirroring a real EndeavourOS report.
+
+VP9's decoder (libvpx) is royalty-free and ships in the base VLC on every
+mainstream distro. Measured across the shipped package, no extra packages
+installed:
+
+| codec | Ubuntu | Fedora | Arch |
+|---|---|---|---|
+| H.264 (old) | ✅ | ⬛ black | ⬛ black |
+| **VP9 (now)** | ✅ | ✅ | ✅ |
+
+The container stays `.mp4` (codec tag `vp09`); libVLC probes by content so the
+desktop apps load the same `foxy.mp4` path. Audio stays AAC, whose free `faad`
+decoder is likewise default everywhere, so the scream plays where the picture
+does — checked in the matrix, which fails on any unsupported codec, audio
+included. On Windows the Avalonia build bundles its own libVLC and needs none of
+this; the older WPF build decodes VP9 via Media Foundation (inbox on Windows 11,
+a free Store extension on Windows 10).
 
 ### Three bugs this found, all invisible to a compile
 

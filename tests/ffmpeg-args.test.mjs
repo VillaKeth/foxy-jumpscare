@@ -56,6 +56,19 @@ describe('buildOpaqueArgs', () => {
     expect(args[args.indexOf('-filter_complex') + 1]).toContain('format=yuv420p');
   });
 
+  it('encodes royalty-free VP9, not H.264', () => {
+    // Load-bearing: Fedora and Arch ship VLC without an H.264 decoder, so an
+    // H.264 desktop file is a black screen there. VP9's decoder is default.
+    expect(args[args.indexOf('-c:v') + 1]).toBe('libvpx-vp9');
+    expect(args).not.toContain('libx264');
+  });
+
+  it('uses constant-quality mode so -crf actually governs the rate', () => {
+    // libvpx treats -crf as a mere ceiling unless -b:v is 0.
+    expect(args[args.indexOf('-b:v') + 1]).toBe('0');
+    expect(args.indexOf('-crf')).toBeGreaterThan(-1);
+  });
+
   it('tolerates a source with no audio track', () => {
     // `0:a?` — the trailing ? makes the audio mapping optional.
     expect(args).toContain('0:a?');

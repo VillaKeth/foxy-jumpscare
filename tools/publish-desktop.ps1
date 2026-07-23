@@ -87,6 +87,11 @@ WHAT IT DOES
   To remove it: right-click the tray icon and choose Quit, then delete the
   folder. It stores only a tiny settings file in
   %APPDATA%\FoxyJumpscare, which you can delete too.
+
+IF THE SCARE IS A BLACK SCREEN WITH NO FOX
+  The video is VP9. Windows 11 decodes it out of the box. On Windows 10 you may
+  need the free "VP9 Video Extensions" from the Microsoft Store (one click, no
+  account) - install it, then try "Test it now" again.
 "@
 
 New-Item -ItemType Directory -Force -Path $outDir | Out-Null

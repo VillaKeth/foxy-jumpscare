@@ -14,7 +14,7 @@ build step below.
 |---|---|---|
 | `foxy-src.mp4` | no | **Source.** The raw greenscreen clip, as downloaded. Never consumed directly by either app. |
 | `foxy.webm` | no | *Derived.* VP9 + alpha, Opus audio. Extension only. |
-| `foxy.mp4` | no | *Derived.* H.264 keyed over black, AAC audio. Desktop only. |
+| `foxy.mp4` | no | *Derived.* VP9 keyed over black, AAC audio, in an MP4 container. Desktop only. |
 | `foxy.ico` | no | *Derived.* Desktop tray icon, cropped to the head from a source still. |
 | `pack.json` | yes | Manifest. |
 
@@ -25,8 +25,14 @@ Two derived formats because the targets genuinely differ:
   bet in Firefox, whose H.264 support depends on OS decoders while VP9 is always
   available in-browser.
 - **Desktop → `foxy.mp4`.** The desktop overlay is fullscreen black, so alpha buys
-  nothing. WPF's `MediaElement` plays H.264 natively via Media Foundation with no
-  third-party dependency; it does not play WebM.
+  nothing — but the codec still matters. The file is **VP9 in an MP4 container**, not
+  H.264: H.264 is patent-encumbered, and Fedora and Arch ship VLC without its decoder,
+  so an H.264 desktop scare is a silent black screen on those distros. VP9's decoder is
+  royalty-free and ships in the base VLC everywhere, so the Avalonia app (libVLC) plays
+  it on stock Ubuntu, Fedora and Arch with nothing extra. On Windows the Avalonia build
+  bundles its own libVLC; the older WPF build decodes it via Media Foundation, which has
+  VP9 inbox on Windows 11 (a free Store extension on Windows 10). The container stays
+  `.mp4` and the codec tag is `vp09`, so the desktop code loads the same path unchanged.
 
 ## Building the derived assets
 
@@ -54,15 +60,20 @@ ffmpeg -i foxy-src.mp4 \
 `-auto-alt-ref 0` is mandatory, not stylistic — VP9 alt-ref frames silently destroy the
 alpha channel, and the failure looks like "transparency randomly stopped working."
 
-Opaque pass (`WxH` injected from `ffprobe`):
+Opaque pass (`WxH` injected from `ffprobe`) — VP9 so it decodes on stock Fedora
+and Arch, which ship VLC without an H.264 decoder:
 
 ```
 ffmpeg -i foxy-src.mp4 -filter_complex \
   "[0:v]chromakey=0x00FF00:0.18:0.05,despill=type=green[fg]; \
    color=c=black:s=WxH[bg]; \
    [bg][fg]overlay=shortest=1,format=yuv420p[v]" \
-  -map "[v]" -map 0:a -c:v libx264 -crf 18 -preset slow -c:a aac -b:a 192k foxy.mp4
+  -map "[v]" -map "0:a?" -c:v libvpx-vp9 -b:v 0 -crf 30 -row-mt 1 \
+  -c:a aac -b:a 192k foxy.mp4
 ```
+
+`-b:v 0` is what puts libvpx into constant-quality (CRF) mode; without it the
+`-crf` is only a ceiling and the file bloats.
 
 ### Checking the key
 
