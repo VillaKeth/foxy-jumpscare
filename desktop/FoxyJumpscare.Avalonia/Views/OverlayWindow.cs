@@ -44,6 +44,7 @@ public static class OverlayWindow
     private static int _width, _height, _stride;
     private static volatile bool _tearing;
     private static int _frames;
+    private static int _marginMs = 1500;
 
     private static readonly List<Window> _windows = new();
     private static readonly List<Image> _images = new();
@@ -64,6 +65,7 @@ public static class OverlayWindow
     {
         Close(); // never stack overlays
         _tearing = false;
+        _marginMs = failsafeMarginMs;
 
         var probe = BuildWindow();
         probe.Show();
@@ -110,13 +112,27 @@ public static class OverlayWindow
 
             foreach (var image in _images) image.Source = _bitmap;
 
-            var player = new MediaPlayer(vlc) { Mute = MuteAll };
+            var player = new MediaPlayer(vlc);
             player.SetVideoFormat("RV32", (uint)_width, (uint)_height, (uint)_stride);
             player.SetVideoCallbacks(_lockCb, null, _displayCb);
-            player.EndReached += (_, _) => Dispatcher.UIThread.Post(Close);
+
+            player.Playing += (_, _) =>
+            {
+                // Re-assert after playback starts: libVLC can ignore volume/mute
+                // set before Play, which left the scream silent.
+                player.Volume = 100;
+                player.Mute = MuteAll;
+                if (Trace)
+                    Log($"playing; audioTracks={player.AudioTrackCount} vol={player.Volume} mute={player.Mute}");
+            };
+
+            // Hold past the end so the audio buffer drains and the scare gets a
+            // beat. Closing the instant the video decodes (a sub-second clip)
+            // cut the audio before it reached the speakers - the "no sound" bug.
+            player.EndReached += (_, _) => Dispatcher.UIThread.Post(() =>
+                DispatcherTimer.RunOnce(Close, TimeSpan.FromMilliseconds(Math.Max(300, _marginMs))));
             if (Trace)
             {
-                player.Playing += (_, _) => Log("playing");
                 player.EndReached += (_, _) => Log("end reached");
                 player.EncounteredError += (_, _) => Log("libvlc error");
             }
