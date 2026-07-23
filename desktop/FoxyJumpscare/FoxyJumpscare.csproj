@@ -17,6 +17,12 @@
     <AssemblyName>FoxyJumpscare</AssemblyName>
     <RootNamespace>FoxyJumpscare</RootNamespace>
 
+    <!-- The icon embedded into the .exe itself: what Task Manager, Alt-Tab,
+         Explorer and the window's own title bar show. Distinct from the tray
+         icon, which is set at runtime. Conditional so a checkout without the
+         (gitignored) asset pack still builds - it just gets no exe icon. -->
+    <ApplicationIcon Condition="Exists('..\..\assets\foxy.ico')">..\..\assets\foxy.ico</ApplicationIcon>
+
     <!-- WFAC010 tells WinForms apps to declare DPI via ApplicationHighDpiMode
          instead of the manifest. That advice does not apply here: this is a WPF
          app that never calls WinForms' Application.Run, and WPF reads its DPI

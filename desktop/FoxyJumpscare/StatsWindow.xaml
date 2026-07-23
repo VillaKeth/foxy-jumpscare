@@ -1,0 +1,62 @@
+<Window x:Class="FoxyJumpscare.StatsWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Foxy Jumpscare"
+        Width="340" SizeToContent="Height"
+        ResizeMode="NoResize"
+        WindowStartupLocation="CenterScreen"
+        Background="#1C1A1D" Foreground="#ECE7E9"
+        FontFamily="Segoe UI" FontSize="13"
+        ShowInTaskbar="True">
+
+    <Window.Resources>
+        <SolidColorBrush x:Key="Muted" Color="#A09AA4" />
+        <SolidColorBrush x:Key="Accent" Color="#BE3A1A" />
+        <SolidColorBrush x:Key="Line" Color="#3A363C" />
+
+        <Style TargetType="TextBlock">
+            <Setter Property="Foreground" Value="#ECE7E9" />
+            <Setter Property="TextWrapping" Value="Wrap" />
+        </Style>
+    </Window.Resources>
+
+    <StackPanel Margin="16">
+        <TextBlock Text="Foxy Jumpscare" FontSize="16" FontWeight="SemiBold" />
+        <TextBlock x:Name="OddsNote" Foreground="{StaticResource Muted}"
+                   FontSize="11.5" Margin="0,2,0,14" />
+
+        <CheckBox x:Name="EnabledCheck" Content="Enabled"
+                  Foreground="#ECE7E9" Margin="0,0,0,14" />
+
+        <TextBlock Text="Rarity" Foreground="{StaticResource Muted}" FontSize="11.5" />
+        <ComboBox x:Name="RarityCombo" Margin="0,4,0,0" />
+
+        <StackPanel x:Name="CustomPanel" Margin="0,10,0,0" Visibility="Collapsed">
+            <TextBlock Text="1 in N chance, every active second"
+                       Foreground="{StaticResource Muted}" FontSize="11.5" />
+            <TextBox x:Name="CustomBox" Margin="0,4,0,0" Padding="4,3"
+                     Background="#2A2730" Foreground="#ECE7E9"
+                     BorderBrush="{StaticResource Line}" />
+        </StackPanel>
+
+        <Border BorderBrush="{StaticResource Line}" BorderThickness="0,1,0,0"
+                Margin="0,14,0,0" Padding="0,10,0,0">
+            <TextBlock>
+                <Run Text="Next scare in about " Foreground="#A09AA4" />
+                <Run x:Name="CountdownRun" FontWeight="SemiBold" FontSize="15" Text="—" />
+                <Run Text=" of active use." Foreground="#A09AA4" />
+            </TextBlock>
+        </Border>
+
+        <TextBlock x:Name="StatusText" Foreground="{StaticResource Accent}"
+                   FontSize="11.5" MinHeight="16" Margin="0,8,0,0" />
+
+        <Button x:Name="TestButton" Content="Test it now"
+                Margin="0,6,0,0" Padding="8,6"
+                Background="{StaticResource Accent}" Foreground="White"
+                BorderThickness="0" Cursor="Hand" />
+
+        <TextBlock Text="Sudden loud video and audio, by design." FontSize="10.5"
+                   Foreground="{StaticResource Muted}" Margin="0,12,0,0" />
+    </StackPanel>
+</Window>
