@@ -14,7 +14,7 @@ working one.
 
 | Piece | Windows | macOS | Linux |
 |---|---|---|---|
-| Builds | ✅ | ✅ (same net8.0 output) | ✅ **verified** (Ubuntu 24.04) |
+| Builds | ✅ | ✅ (same net8.0 output) | ✅ **verified** (Ubuntu 24.04 + Fedora 41) |
 | App runs, tray + settings window | ✅ **verified** | ⚠️ written, **not run** | ✅ **verified** — settings window screenshotted on X11; tray unverified (no systray in the test WM) |
 | Idle detection | ✅ `GetLastInputInfo` | ⚠️ `CGEventSource…` (unrun) | ✅ **verified live** — climbs 0.55 → 1.05 → 1.55 → 2.05 → 2.55s under a real X server |
 | Autostart | ✅ registry Run key | ⚠️ LaunchAgent plist (unrun) | ◑ XDG reads cleanly; writing a `.desktop` not end-to-end tested |
@@ -65,25 +65,53 @@ never executed on that OS — treat it as a draft until someone runs it there.
 
 ## How Linux was verified
 
-WSL2 Ubuntu 24.04, entered as root (`wsl -d Ubuntu -u root`, which needs no
-password), driving a real X server rather than WSLg:
+In containers, reproducibly. From a Linux shell with Docker — on this project
+that is WSL, `wsl -d Ubuntu -u root`, which needs no password and runs systemd
+as PID 1:
 
 ```bash
-apt-get install -y xvfb openbox imagemagick libxss1 libvlc5 vlc-plugin-base \
-                   fonts-dejavu-core x11-utils
-Xvfb :99 -screen 0 1920x1080x24 &   # a real X server, WITH MIT-SCREEN-SAVER
-DISPLAY=:99 openbox &               # a real window manager - see bug 3
-DISPLAY=:99 dotnet FoxyJumpscare.dll --probe-idle
-DISPLAY=:99 dotnet FoxyJumpscare.dll --test-scare   # screenshot with `import`
+./docker/run-linux-verify.sh        # Ubuntu 24.04
+./docker/run-linux-verify.sh all    # + Fedora 41
 ```
 
-WSLg alone is not enough: its Xwayland has no `MIT-SCREEN-SAVER`, so idle
-always reads 0 and the bug below stays invisible. Xvfb has the extension.
+Each container builds the app, then checks the things a compile cannot: idle
+returns a *climbing* value, the settings window maps with the right title, and
+the overlay decodes video across the whole screen. It exits non-zero if any
+check fails, so it works as a gate. Screenshots and logs land in `docker/out/`.
 
-Results: build clean (0/0), settings window renders, idle climbs correctly,
-overlay covers the screen with 22 decoded frames in the right colours, and
-teardown is clean. Screenshots were taken with ImageMagick's `import` and
-inspected.
+Both distros currently report **ALL CHECKS PASSED**.
+
+Two properties of the container matter and are easy to lose:
+
+- **It is empty.** A developer box accumulates `-dev` packages that hide
+  missing dependencies — in particular an unversioned `libvlc.so` symlink,
+  whose presence would mask bug 2 below. The run asserts that only
+  `libvlc.so.5` exists, so the resolver is genuinely exercised.
+- **It runs a real X server and a real window manager.** Xvfb has
+  `MIT-SCREEN-SAVER`, which WSLg's Xwayland does not, so idle can actually be
+  measured; and `_NET_WM_STATE_FULLSCREEN` needs a WM to be honoured, so
+  openbox is what makes bug 3 visible.
+
+### Runtime dependencies, as measured
+
+| | Debian / Ubuntu | Fedora |
+|---|---|---|
+| Video | `libvlc5`, `vlc-plugin-base` | `vlc-libs`, `vlc-plugins-base`, **`vlc-plugin-ffmpeg`** |
+| Idle | `libxss1` | `libXScrnSaver` |
+| GUI | `libx11-6`, `libice6`, `libsm6`, `libfontconfig1`, plus any font | `libX11`, `libICE`, `libSM`, `fontconfig`, plus any font |
+
+Fedora needs two packages Ubuntu does not, and both fail confusingly:
+
+- Without `vlc-plugins-base`, `vlc-libs` installs the library beside an empty
+  plugin directory and libVLC will not instantiate — reporting a missing
+  *NuGet* package, which is not the problem.
+- Without `vlc-plugin-ffmpeg` there is no `libavcodec_plugin.so`, and playback
+  dies with ``Codec `h264' ... is not supported`` while everything else looks
+  healthy. Fedora splits it out because it is the plugin that drags in ffmpeg.
+
+Both are in Fedora's own repositories; RPM Fusion is *not* required. The app
+prints this package list to stderr when video fails, because LibVLCSharp's own
+message points somewhere useless.
 
 ### Three bugs this found, all invisible to a compile
 

@@ -174,6 +174,19 @@ public static class OverlayWindow
         catch (Exception ex)
         {
             Log($"video start failed: {ex.Message}");
+
+            // LibVLCSharp's own message here tells you to install a
+            // VideoLAN.LibVLC.<Platform> NuGet package, which is wrong on
+            // Linux and macOS - the real cause is almost always libvlc being
+            // present while its PLUGINS are not. Fedora's vlc-libs ships the
+            // library and an empty plugin directory, which fails exactly this
+            // way and sends you hunting for a NuGet package that does not
+            // apply.
+            if (!OperatingSystem.IsWindows())
+                Log("hint: the system VLC libraries AND their plugins are both needed - " +
+                    "apt install libvlc5 vlc-plugin-base / " +
+                    "dnf install vlc-libs vlc-plugins-base vlc-plugin-ffmpeg / " +
+                    "brew install vlc");
         }
     }
 
