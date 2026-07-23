@@ -1,0 +1,37 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <BuiltInComInteropSupport>true</BuiltInComInteropSupport>
+    <AvaloniaUseCompiledBindingsByDefault>true</AvaloniaUseCompiledBindingsByDefault>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <AssemblyName>FoxyJumpscare</AssemblyName>
+    <RootNamespace>FoxyJumpscare</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Avalonia" Version="11.3.18" />
+    <PackageReference Include="Avalonia.Desktop" Version="11.3.18" />
+    <PackageReference Include="Avalonia.Themes.Fluent" Version="11.3.18" />
+    <PackageReference Include="Avalonia.Diagnostics" Version="11.3.18" Condition="'$(Configuration)' == 'Debug'" />
+    <!-- Windows-only API. Referenced from a cross-platform net8.0 build, but
+         only ever exercised behind an OperatingSystem.IsWindows() guard. -->
+    <PackageReference Include="Microsoft.Win32.Registry" Version="5.0.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\FoxyJumpscare.Core\FoxyJumpscare.Core.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Assets from the pack, optional so the app builds before it exists. -->
+    <None Include="..\..\assets\foxy.mp4" Condition="Exists('..\..\assets\foxy.mp4')"
+          CopyToOutputDirectory="PreserveNewest" Link="foxy.mp4" />
+    <None Include="..\..\assets\foxy.ico" Condition="Exists('..\..\assets\foxy.ico')"
+          CopyToOutputDirectory="PreserveNewest" Link="foxy.ico" />
+  </ItemGroup>
+
+</Project>

@@ -9,6 +9,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "FoxyJumpscare.Core.Tests", 
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "FoxyJumpscare", "FoxyJumpscare\FoxyJumpscare.csproj", "{7978FABE-54A8-4361-9B79-BA5602DFDFD7}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "FoxyJumpscare.Avalonia", "FoxyJumpscare.Avalonia\FoxyJumpscare.Avalonia.csproj", "{0076870B-0F50-4F54-B27F-928EEEDAE53C}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -30,5 +32,9 @@ Global
 		{7978FABE-54A8-4361-9B79-BA5602DFDFD7}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{7978FABE-54A8-4361-9B79-BA5602DFDFD7}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{7978FABE-54A8-4361-9B79-BA5602DFDFD7}.Release|Any CPU.Build.0 = Release|Any CPU
+		{0076870B-0F50-4F54-B27F-928EEEDAE53C}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{0076870B-0F50-4F54-B27F-928EEEDAE53C}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{0076870B-0F50-4F54-B27F-928EEEDAE53C}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{0076870B-0F50-4F54-B27F-928EEEDAE53C}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 EndGlobal
