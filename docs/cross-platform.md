@@ -14,12 +14,17 @@ working one.
 
 | Piece | Windows | macOS | Linux |
 |---|---|---|---|
-| Builds | ✅ | ✅ (same net8.0 output) | ✅ |
-| App runs, tray + settings window | ✅ **verified** | ⚠️ written, **not run** | ⚠️ written, **not run** |
-| Idle detection | ✅ `GetLastInputInfo` | ⚠️ `CGEventSource…` (unrun) | ⚠️ X11 `XScreenSaver` (unrun) |
-| Autostart | ✅ registry Run key | ⚠️ LaunchAgent plist (unrun) | ⚠️ XDG `.desktop` (unrun) |
+| Builds | ✅ | ✅ (same net8.0 output) | ✅ **verified** (Ubuntu 24.04) |
+| App runs, tray + settings window | ✅ **verified** | ⚠️ written, **not run** | ⚠️ platform layer run headless; GUI unrun |
+| Idle detection | ✅ `GetLastInputInfo` | ⚠️ `CGEventSource…` (unrun) | ◑ `XScreenSaver` P/Invoke loads & degrades gracefully; offset matches layout; live read needs X11 screensaver ext |
+| Autostart | ✅ registry Run key | ⚠️ LaunchAgent plist (unrun) | ◑ XDG reads cleanly; writing a `.desktop` not end-to-end tested |
 | Overlay: all-monitor + failsafe | ✅ **verified** | ⚠️ unrun | ⚠️ unrun |
-| **Video + audio in the overlay** | ✅ **verified** (LibVLCSharp) | ⚠️ needs system libvlc, unrun | ⚠️ needs system libvlc, unrun |
+| **Video + audio in the overlay** | ✅ **verified** (WaveOut) | ⚠️ needs system libvlc, unrun | ⚠️ needs system libvlc, unrun |
+
+Windows audio uses the **WaveOut** module explicitly. libVLC's own default
+(mmdevice/WASAPI) crashed this STA app once real audio played, and its
+DirectSound module opened an output device that never reached the speakers.
+WaveOut routes to the system default output and is verified working.
 
 "Verified" means it was built and run on this Windows machine and observed to
 work. "Not run" means the code is written from the documented APIs but has
@@ -53,6 +58,28 @@ never executed on that OS — treat it as a draft until someone runs it there.
 4. **Linux tray needs a systray-capable desktop.** GNOME hides legacy tray icons
    without an extension (e.g. AppIndicator). The app still runs; the icon may
    just not appear.
+
+## Linux verification (WSL, no root)
+
+The Linux column above was checked from this Windows box via WSL2 Ubuntu 24.04,
+without sudo: the .NET SDK installed to `$HOME/.dotnet` (dotnet-install.sh),
+and `libXss.so.1` came from `apt-get download libxss1` extracted locally. Then:
+
+- `dotnet build -c Release` → **0 warnings, 0 errors**. The app compiles on
+  Linux; `VideoLAN.LibVLC.Windows` is correctly excluded and nothing else is
+  Windows-only at compile time.
+- `dotnet FoxyJumpscare.dll --probe-idle` (a headless mode that runs only the
+  platform layer, no GUI) → selects `LinuxPlatform`, reads XDG autostart
+  cleanly, and calls the `XScreenSaver` P/Invoke. Under WSLg's Xwayland, which
+  lacks `MIT-SCREEN-SAVER`, the call returns 0 and the app keeps running — the
+  documented Wayland fallback, confirmed not to crash.
+
+What is **not** yet verified on Linux: a live idle *value* (needs an X server
+with the screensaver extension — Xvfb, or a real X11 desktop — neither is WSLg),
+video/audio playback (needs a display and system libvlc), and the tray icon
+(GNOME hides legacy trays). The `XScreenSaverInfo.idle` byte offset is 24 on
+64-bit, which matches both the documented struct layout and the code's
+`IntPtr.Size + int + int + IntPtr.Size`.
 
 ## Build and run
 
