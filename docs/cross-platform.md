@@ -19,7 +19,7 @@ working one.
 | Idle detection | ✅ `GetLastInputInfo` | ⚠️ `CGEventSource…` (unrun) | ⚠️ X11 `XScreenSaver` (unrun) |
 | Autostart | ✅ registry Run key | ⚠️ LaunchAgent plist (unrun) | ⚠️ XDG `.desktop` (unrun) |
 | Overlay: all-monitor + failsafe | ✅ **verified** | ⚠️ unrun | ⚠️ unrun |
-| **Video + audio in the overlay** | ❌ **not built yet** | ❌ | ❌ |
+| **Video + audio in the overlay** | ✅ **verified** (LibVLCSharp) | ⚠️ needs system libvlc, unrun | ⚠️ needs system libvlc, unrun |
 
 "Verified" means it was built and run on this Windows machine and observed to
 work. "Not run" means the code is written from the documented APIs but has
@@ -27,13 +27,17 @@ never executed on that OS — treat it as a draft until someone runs it there.
 
 ## The honest gaps
 
-1. **No video yet.** The overlay is a black fullscreen window with a placeholder
-   marker. It proves the mechanics that matter — coverage of every monitor and
-   guaranteed self-teardown — but it does not play the scare. Adding playback is
-   the next step, via LibVLCSharp (the one mature cross-platform media option
-   for Avalonia; WPF's `MediaElement` is Windows-only and has no Avalonia
-   equivalent). That pulls in native libVLC per platform and is the single
-   biggest remaining risk.
+1. **Video plays, on Windows.** The overlay decodes and plays the clip through
+   LibVLCSharp, on every monitor, muted on all but the primary so the scream
+   sounds once, and tears down cleanly (a native use-after-free during teardown
+   is avoided by detaching each player from its VideoView before disposing).
+   The native libVLC ships with the Windows build via `VideoLAN.LibVLC.Windows`.
+   On Linux and macOS the app expects a **system libvlc** (`apt install vlc` /
+   `brew install vlc`) — this has not been run there yet.
+
+   `FOXY_MUTE=1` mutes even the primary player, and `FOXY_TRACE=1` logs
+   playback state to stderr — both were added for headless verification and are
+   handy for a silent-but-armed setup.
 2. **macOS and Linux are unrun by the author.** This is a Windows box. The
    platform files were written against Apple's and X11's documented APIs, but
    nobody has launched the app on either OS. The P/Invoke struct offsets in

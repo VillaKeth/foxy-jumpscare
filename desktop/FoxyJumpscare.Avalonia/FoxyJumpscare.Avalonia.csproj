@@ -20,6 +20,16 @@
     <!-- Windows-only API. Referenced from a cross-platform net8.0 build, but
          only ever exercised behind an OperatingSystem.IsWindows() guard. -->
     <PackageReference Include="Microsoft.Win32.Registry" Version="5.0.0" />
+
+    <!-- Cross-platform video. Avalonia has no built-in player; LibVLCSharp is
+         the mature option. The native libVLC is pulled per platform: the
+         VideoLAN.LibVLC.Windows package on a Windows build, and the system
+         libvlc (apt/brew) on Linux and macOS. Conditioned on the BUILD host,
+         which is also the target here. -->
+    <PackageReference Include="LibVLCSharp" Version="3.10.0" />
+    <PackageReference Include="LibVLCSharp.Avalonia" Version="3.10.0" />
+    <PackageReference Include="VideoLAN.LibVLC.Windows" Version="3.0.23"
+                      Condition="$([MSBuild]::IsOSPlatform('Windows'))" />
   </ItemGroup>
 
   <ItemGroup>
