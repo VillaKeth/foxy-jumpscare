@@ -63,34 +63,58 @@ if (-not (Test-Path "$publishDir\foxy.mp4")) {
 $install = @"
 Foxy Jumpscare - install (Linux)
 
-STEP 1. Install the VLC libraries. This is the only thing you need that is not
-        in this folder; the app cannot decode the video without it.
+============================================================
+EASIEST WAY - set it up once, then forget about it
+============================================================
 
-        Debian / Ubuntu / Mint / Pop!_OS:
-            sudo apt install libvlc5 vlc-plugin-base
+STEP 1. Make sure VLC is installed (one-time - it is the video codec).
+        If you already have the VLC media player, skip this.
 
-        Fedora:
-            sudo dnf install vlc-libs vlc-plugins-base
+        - From your Software Center / app store: search "VLC", install it.
+        - Or in a terminal:
+            Arch / EndeavourOS / Manjaro:      sudo pacman -S vlc
+            Debian / Ubuntu / Mint / Pop!_OS:  sudo apt install libvlc5 vlc-plugin-base
+            Fedora:                            sudo dnf install vlc-libs vlc-plugins-base
 
-        Arch / EndeavourOS / Manjaro:
-            sudo pacman -S vlc
+        The base package is enough everywhere - the scare video is VP9, whose
+        decoder ships with VLC on every distro. No extra codec package needed.
 
-        (If you already have the VLC media player installed, you have these.)
-        The base package is enough on every distro - the scare video is VP9,
-        whose decoder ships with VLC everywhere. No extra codec package is
-        needed.
+STEP 2. Double-click  install.sh  in this folder. If your file manager asks,
+        choose "Run" (or "Run in Terminal"). If it opens as a text file
+        instead, open a terminal in this folder and run:
 
-STEP 2. Unpack and run:
+            bash install.sh
+
+        That is the whole install. It:
+          - copies the app to a permanent spot (~/.local/share/FoxyJumpscare),
+          - starts it right now,
+          - makes it launch automatically every time you log in.
+
+        You can delete this folder afterwards. It keeps running and keeps
+        coming back at every login until you remove it.
+
+TO SEE IT / CHANGE SETTINGS
+        Open your app menu and search "Foxy" - that opens the settings window
+        ("Test it now" fires one immediately). Otherwise it just sits in the
+        background until it strikes.
+
+TO REMOVE IT
+        Double-click  uninstall.sh  (or "bash uninstall.sh"). Stops it and
+        removes the autostart entry, the installed copy, and your settings.
+
+============================================================
+PREFER TO DO IT BY HAND?
+============================================================
 
             tar -xzf FoxyJumpscare-linux-x64.tar.gz
             cd FoxyJumpscare
             chmod +x FoxyJumpscare      # only if it will not start
-            ./FoxyJumpscare
+            ./FoxyJumpscare             # background tray app - nothing visible is normal
+            ./FoxyJumpscare --settings  # to open the window now
 
-        Nothing appears to happen, and that is correct - it is a background
-        tray app. To see the window right away:
-
-            ./FoxyJumpscare --settings
+        For launch-at-login by hand: open the settings window and tick "Run at
+        startup" (or the same item in the tray menu). Keep the app folder where
+        it is - the entry points at that location.
 
 WHAT IT DOES
   At random - by default about once every couple of days of active use - a
@@ -101,25 +125,16 @@ WHAT IT DOES
   Sudden loud audio and a startle, by design. Skip it if you are
   photosensitive, and think twice on a work machine or in headphones.
 
-START IT AUTOMATICALLY AT LOGIN
-  Open the settings window ("./FoxyJumpscare --settings") and tick "Run at
-  startup", or use the same item in the tray menu. That writes a standard
-  autostart entry, so it comes back on every login until you untick it. Keep
-  the app folder where it is - the entry points at this location, so moving the
-  folder afterwards breaks it (just re-tick from the new spot).
-
 LINUX NOTES
   - The tray icon needs a desktop that still supports system tray icons. GNOME
-    hides them unless you have an AppIndicator extension. The app works either
-    way; if you cannot see the icon, use "./FoxyJumpscare --settings" to open
-    the window - everything, including "Run at startup", is in there too.
+    hides them unless you have an AppIndicator extension. Either way the app
+    works and the menu entry ("search Foxy") opens everything, including
+    "Run at startup".
   - Idle detection uses X11. On Wayland it cannot tell whether you are at the
     keyboard, so the countdown keeps running while you are away.
 
-TO REMOVE IT
-  Quit from the tray menu (or 'pkill FoxyJumpscare') and delete this folder.
-  Settings live in ~/.config/FoxyJumpscare; autostart, if you turned it on, is
-  ~/.config/autostart/foxyjumpscare.desktop.
+Settings live in ~/.config/FoxyJumpscare. Autostart, once on, is
+~/.config/autostart/foxyjumpscare.desktop.
 "@
 
 New-Item -ItemType Directory -Force -Path $outDir | Out-Null
@@ -128,7 +143,16 @@ New-Item -ItemType Directory -Force -Path $outDir | Out-Null
 $installLf = $install -replace "`r`n", "`n"
 [System.IO.File]::WriteAllText("$publishDir\INSTALL.txt", $installLf)
 
-$ship = @('FoxyJumpscare', 'foxy.mp4', 'foxy.ico', 'INSTALL.txt')
+# Ship the one-time installer / uninstaller. LF endings: they run on Linux, and
+# a CR at the end of the shebang line makes the kernel look for "/bin/bash\r".
+foreach ($sh in 'install.sh', 'uninstall.sh') {
+  $shSrc = "$repo\tools\linux\$sh"
+  if (-not (Test-Path $shSrc)) { throw "missing $shSrc - expected tools/linux/$sh" }
+  $shLf = (Get-Content $shSrc -Raw) -replace "`r`n", "`n"
+  [System.IO.File]::WriteAllText("$publishDir\$sh", $shLf)
+}
+
+$ship = @('FoxyJumpscare', 'foxy.mp4', 'foxy.ico', 'INSTALL.txt', 'install.sh', 'uninstall.sh')
 foreach ($f in $ship) {
   if (-not (Test-Path (Join-Path $publishDir $f))) { throw "missing from publish output: $f" }
 }
@@ -143,7 +167,7 @@ if ($wsl) {
   $wslOut     = (& wsl wslpath -a ($tarball    -replace '\\', '/')) 2>$null
   if ($wslPublish -and $wslOut) {
     $names = $ship -join ' '
-    $cmd = "cd '$wslPublish' && chmod +x FoxyJumpscare && " +
+    $cmd = "cd '$wslPublish' && chmod +x FoxyJumpscare install.sh uninstall.sh && " +
            "tar --transform 's,^,FoxyJumpscare/,' -czf '$wslOut' $names"
     & wsl bash -lc $cmd
     $madeWithWsl = ($LASTEXITCODE -eq 0)
