@@ -14,7 +14,10 @@ import { fileURLToPath } from 'node:url';
 import { createZip } from './lib/zip.mjs';
 
 const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
-const TARGETS = ['chrome', 'firefox'];
+// opera builds the same manifest-at-root zip as the others. Opera GX is
+// Chromium, so this zip both submits to the Opera add-ons store and, unzipped,
+// is exactly what a friend points "Load unpacked" at.
+const TARGETS = ['chrome', 'firefox', 'opera'];
 
 /** Every file under dir, as archive-relative POSIX paths. */
 async function collect(dir, base = dir) {
