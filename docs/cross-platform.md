@@ -17,7 +17,7 @@ working one.
 | Builds | ✅ | ✅ (same net8.0 output) | ✅ **verified** (Ubuntu 24.04 + Fedora 41) |
 | App runs, tray + settings window | ✅ **verified** | ⚠️ written, **not run** | ✅ **verified** — settings window screenshotted on X11; tray unverified (no systray in the test WM) |
 | Idle detection | ✅ `GetLastInputInfo` | ⚠️ `CGEventSource…` (unrun) | ✅ **verified live** — climbs 0.55 → 1.05 → 1.55 → 2.05 → 2.55s under a real X server |
-| Autostart | ✅ registry Run key | ⚠️ LaunchAgent plist (unrun) | ◑ XDG reads cleanly; writing a `.desktop` not end-to-end tested |
+| Autostart | ✅ **verified** — Run key round-trips | ⚠️ LaunchAgent plist (unrun) | ✅ **verified** — writes/removes an XDG `.desktop` with the correct Exec, round-tripped on Arch |
 | Overlay: all-monitor + failsafe | ✅ **verified** | ⚠️ unrun | ✅ **verified** fullscreen + clean teardown (single screen; multi-monitor unrun) |
 | Video in the overlay | ✅ **verified** | ⚠️ needs system libvlc, unrun | ✅ **verified** — 22 frames, correct colours, screenshotted |
 | Audio in the overlay | ✅ **verified** (WaveOut) | ⚠️ needs system libvlc, unrun | ◑ PulseAudio module engages, 2 audio tracks decoded; no speakers in the VM to hear it |
@@ -158,12 +158,28 @@ a free Store extension on Windows 10).
    `Place()` now also sets Width/Height from the screen bounds, so the overlay
    covers the monitor even where the hint is ignored.
 
+### Autostart on Linux
+
+Registering launch-at-login writes an XDG `.desktop` to
+`~/.config/autostart/foxyjumpscare.desktop`, which every mainstream desktop
+honours. Verified on Arch via `--probe-autostart` (a headless set/clear/set
+round-trip): the file is created with a valid `Exec` pointing at the running
+binary, `IsEnabled` flips true/false to match, and it stays on disk for the
+next login. The `Exec` path is whatever the app was launched from, so **moving
+the folder after enabling autostart breaks it** — re-tick it from the new
+location.
+
+The toggle lives in **both** the tray menu and the settings window. The window
+copy is not redundant: on a desktop that hides the tray icon (GNOME without an
+AppIndicator extension), the menu is unreachable, and `--settings` is then the
+only way to turn autostart on.
+
 ### Still unverified on Linux
 
 The tray icon (openbox has no system tray; GNOME hides legacy trays without an
-AppIndicator extension), multi-monitor mirroring, audio actually reaching
+AppIndicator extension), multi-monitor mirroring, and audio actually reaching
 speakers — the PulseAudio module engages and both audio tracks decode, but the
-VM has no output device — and writing the XDG autostart `.desktop` end to end.
+VM has no output device.
 
 The noisy `Failed to create video converter` / `video output creation failed`
 lines libVLC prints on Linux are benign: they are its first vout attempt before

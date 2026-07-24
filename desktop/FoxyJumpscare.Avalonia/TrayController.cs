@@ -26,6 +26,7 @@ public sealed class TrayController : IDisposable
 
     private TrayIcon? _tray;
     private NativeMenuItem? _enabledItem;
+    private NativeMenuItem? _startupItem;
     private Timer? _timer;
     private AppConfig _config = new();
     private AppState _state = new();
@@ -115,20 +116,13 @@ public sealed class TrayController : IDisposable
         test.Click += (_, _) => FireTest();
         menu.Add(test);
 
-        var startup = new NativeMenuItem("Run at startup")
+        _startupItem = new NativeMenuItem("Run at startup")
         {
             ToggleType = NativeMenuItemToggleType.CheckBox,
             IsChecked = _platform.Autostart.IsEnabled,
         };
-        startup.Click += (_, _) =>
-        {
-            var on = !_platform.Autostart.IsEnabled;
-            _platform.Autostart.Set(on);
-            startup.IsChecked = _platform.Autostart.IsEnabled;
-            _config.RunAtStartup = on;
-            Store.SaveConfig(_dir, _config);
-        };
-        menu.Add(startup);
+        _startupItem.Click += (_, _) => SetAutostart(!AutostartEnabled);
+        menu.Add(_startupItem);
 
         menu.Add(new NativeMenuItemSeparator());
 
@@ -170,6 +164,34 @@ public sealed class TrayController : IDisposable
         _config.Enabled = enabled;
         Store.SaveConfig(_dir, _config);
         if (_enabledItem is not null) _enabledItem.IsChecked = enabled;
+    }
+
+    /// <summary>Whether the app is registered to launch at login, read live from
+    /// the OS (the registry Run key / LaunchAgent / XDG .desktop), not cached.</summary>
+    public bool AutostartEnabled => _platform.Autostart.IsEnabled;
+
+    /// <summary>
+    /// Register or unregister launch-at-login. Shared by the tray menu and the
+    /// settings window, so the checkbox that lives in each stays in step - which
+    /// is why the window exposes this at all: on a desktop that hides the tray
+    /// icon (GNOME without an AppIndicator extension), the menu is unreachable
+    /// and the window is the only way to reach the toggle.
+    ///
+    /// Returns the state actually in effect afterwards. Writing the autostart
+    /// entry can fail (a read-only home, a locked file); rather than throw into
+    /// a UI click handler, we swallow it and report the real state, so the
+    /// checkbox can snap back instead of lying.
+    /// </summary>
+    public bool SetAutostart(bool on)
+    {
+        try { _platform.Autostart.Set(on); }
+        catch (Exception ex) { Console.Error.WriteLine($"[foxy] autostart: {ex.Message}"); }
+
+        var actual = _platform.Autostart.IsEnabled;
+        _config.RunAtStartup = actual;
+        try { Store.SaveConfig(_dir, _config); } catch { /* best effort */ }
+        if (_startupItem is not null) _startupItem.IsChecked = actual;
+        return actual;
     }
 
     /// <summary>

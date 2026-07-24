@@ -13,7 +13,8 @@
     <TextBlock x:Name="OddsNote" Foreground="#A09AA4" FontSize="12"
                Margin="0,2,0,14" TextWrapping="Wrap" />
 
-    <CheckBox x:Name="EnabledCheck" Content="Enabled" Foreground="#ECE7E9" Margin="0,0,0,8" />
+    <CheckBox x:Name="EnabledCheck" Content="Enabled" Foreground="#ECE7E9" Margin="0,0,0,4" />
+    <CheckBox x:Name="StartupCheck" Content="Run at startup" Foreground="#ECE7E9" Margin="0,0,0,8" />
 
     <TextBlock Text="Rarity" Foreground="#A09AA4" FontSize="12" />
     <ComboBox x:Name="RarityCombo" Margin="0,4,0,0" HorizontalAlignment="Stretch" />

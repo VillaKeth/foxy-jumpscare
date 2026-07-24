@@ -101,11 +101,18 @@ WHAT IT DOES
   Sudden loud audio and a startle, by design. Skip it if you are
   photosensitive, and think twice on a work machine or in headphones.
 
+START IT AUTOMATICALLY AT LOGIN
+  Open the settings window ("./FoxyJumpscare --settings") and tick "Run at
+  startup", or use the same item in the tray menu. That writes a standard
+  autostart entry, so it comes back on every login until you untick it. Keep
+  the app folder where it is - the entry points at this location, so moving the
+  folder afterwards breaks it (just re-tick from the new spot).
+
 LINUX NOTES
   - The tray icon needs a desktop that still supports system tray icons. GNOME
     hides them unless you have an AppIndicator extension. The app works either
     way; if you cannot see the icon, use "./FoxyJumpscare --settings" to open
-    the window.
+    the window - everything, including "Run at startup", is in there too.
   - Idle detection uses X11. On Wayland it cannot tell whether you are at the
     keyboard, so the countdown keeps running while you are away.
 

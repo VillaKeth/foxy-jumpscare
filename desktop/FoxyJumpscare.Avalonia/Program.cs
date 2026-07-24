@@ -20,6 +20,16 @@ internal static class Program
             return;
         }
 
+        // Round-trip the autostart registration with no GUI, to check the
+        // per-OS write (registry Run key / LaunchAgent / XDG .desktop) actually
+        // takes - see docs/cross-platform.md. Leaves autostart ON at the end so
+        // the resulting file can be inspected.
+        if (args.Contains("--probe-autostart"))
+        {
+            ProbeAutostart();
+            return;
+        }
+
         BuildAvaloniaApp().StartWithClassicDesktopLifetime(args);
     }
 
@@ -44,5 +54,24 @@ internal static class Program
             Console.WriteLine($"idle      : {services.Idle.IdleSeconds():F2}s");
             Thread.Sleep(500);
         }
+    }
+
+    private static void ProbeAutostart()
+    {
+        var services = PlatformServices.Detect();
+        var autostart = services.Autostart;
+        Console.WriteLine($"platform  : {services.GetType().Name}");
+        Console.WriteLine($"before    : {autostart.IsEnabled}");
+
+        autostart.Set(true);
+        Console.WriteLine($"after on  : {autostart.IsEnabled}");   // want True
+
+        autostart.Set(false);
+        Console.WriteLine($"after off : {autostart.IsEnabled}");   // want False
+
+        // Leave it on so the caller can inspect the written entry (its Exec
+        // line in particular - a wrong path is the usual autostart failure).
+        autostart.Set(true);
+        Console.WriteLine($"final     : {autostart.IsEnabled}");   // want True
     }
 }

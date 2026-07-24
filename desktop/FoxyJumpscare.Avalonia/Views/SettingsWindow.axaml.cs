@@ -46,6 +46,7 @@ public partial class SettingsWindow : Window
         if (controller is not null) Load();
 
         EnabledCheck.IsCheckedChanged += OnEnabledChanged;
+        StartupCheck.IsCheckedChanged += OnStartupChanged;
         RarityCombo.SelectionChanged += OnRarityChanged;
         CustomBox.LostFocus += (_, _) => CommitCustom();
         CustomBox.KeyDown += (_, e) => { if (e.Key == Key.Enter) CommitCustom(); };
@@ -74,6 +75,7 @@ public partial class SettingsWindow : Window
         _loading = true;
 
         EnabledCheck.IsChecked = _controller.Config.Enabled;
+        StartupCheck.IsChecked = _controller.AutostartEnabled;
 
         var current = _controller.Config.OneInN;
         var preset = _choices.FirstOrDefault(c => c.Value == current);
@@ -101,6 +103,28 @@ public partial class SettingsWindow : Window
         var on = EnabledCheck.IsChecked == true;
         _controller.SetEnabled(on);
         StatusText.Text = on ? "Enabled." : "Disabled. Nothing will fire.";
+    }
+
+    private void OnStartupChanged(object? sender, RoutedEventArgs e)
+    {
+        if (_loading) return;
+        var requested = StartupCheck.IsChecked == true;
+        var actual = _controller.SetAutostart(requested);
+
+        // If the write failed, the box must reflect reality, not the click.
+        // Guard the assignment so it does not re-enter this handler.
+        if (actual != requested)
+        {
+            _loading = true;
+            StartupCheck.IsChecked = actual;
+            _loading = false;
+            StatusText.Text = "Could not change the startup setting.";
+            return;
+        }
+
+        StatusText.Text = actual
+            ? "Will start automatically when you log in."
+            : "Will no longer start automatically.";
     }
 
     private void OnRarityChanged(object? sender, SelectionChangedEventArgs e)
