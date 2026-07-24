@@ -97,19 +97,35 @@ public static class OverlayWindow
         _tearing = false;
         _marginMs = failsafeMarginMs;
 
-        var probe = BuildWindow();
-        probe.Show();
-        _windows.Add(probe);
+        // Build the first window up front; on non-Windows it also carries the
+        // Screens enumeration.
+        var first = BuildWindow();
+        first.Show();
+        _windows.Add(first);
 
-        var screens = probe.Screens.All;
-        for (var i = 1; i < screens.Count; i++)
+        // Monitor geometry, queried LIVE each fire. On Windows this comes from
+        // Win32 directly (WinDisplays) rather than Avalonia's Window.Screens,
+        // which caches and can be left stale by a resolution change - Remote
+        // Desktop connect/disconnect being the reproducer. A stale cache is why
+        // the overlay kept coming up at the smaller remote size, every scare,
+        // until the app was restarted.
+        var monitors = OperatingSystem.IsWindows()
+            ? Platform.WinDisplays.Query()
+            : first.Screens.All.Select(s => (Bounds: s.Bounds, Scaling: (double)s.Scaling)).ToList();
+
+        if (monitors.Count == 0)
+            monitors = new List<(PixelRect Bounds, double Scaling)> { (new PixelRect(0, 0, 1920, 1080), 1.0) };
+
+        // One overlay window per monitor.
+        while (_windows.Count < monitors.Count)
         {
             var w = BuildWindow();
             w.Show();
             _windows.Add(w);
         }
-        for (var i = 0; i < _windows.Count && i < screens.Count; i++)
-            Place(_windows[i], screens[i]);
+
+        for (var i = 0; i < monitors.Count && i < _windows.Count; i++)
+            Place(_windows[i], monitors[i].Bounds, monitors[i].Scaling);
 
         if (videoPath is not null)
             StartVideo(videoPath);
@@ -243,11 +259,10 @@ public static class OverlayWindow
         };
     }
 
-    private static void Place(Window w, Screen screen)
+    private static void Place(Window w, PixelRect bounds, double scaling)
     {
         // Physical-pixel position, then FullScreen fills that monitor - which
         // sidesteps per-monitor DPI-to-DIP conversion.
-        var bounds = screen.Bounds;
         w.Position = bounds.Position;
 
         // Size the window explicitly as well, because FullScreen is only a
@@ -256,13 +271,17 @@ public static class OverlayWindow
         // scare rendered at the video's natural size in the top-left corner
         // instead of covering the screen. Sizing first means the overlay
         // covers the monitor even if the request is ignored; where it is
-        // honoured, FullScreen wins and this is a no-op.
-        // Bounds are physical pixels, Width/Height are DIPs.
-        var scaling = screen.Scaling <= 0 ? 1 : screen.Scaling;
-        w.Width = bounds.Width / scaling;
-        w.Height = bounds.Height / scaling;
+        // honoured, FullScreen wins and this is a no-op. Bounds are physical
+        // pixels; Width/Height are DIPs.
+        var s = scaling <= 0 ? 1 : scaling;
+        w.Width = bounds.Width / s;
+        w.Height = bounds.Height / s;
 
         w.WindowState = WindowState.FullScreen;
+
+        if (Trace)
+            Log($"placed monitor {bounds.Width}x{bounds.Height} @({bounds.X},{bounds.Y}) " +
+                $"scaling={s:0.##} -> window {w.Width:0}x{w.Height:0} DIP");
     }
 
     public static void Close()
