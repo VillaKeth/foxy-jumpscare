@@ -4,7 +4,11 @@ import { join, dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
-const TARGETS = ['chrome', 'firefox'];
+// opera is byte-for-byte the chrome build: Opera (incl. Opera GX) is Chromium
+// and loads an MV3 service-worker extension unchanged. It exists as its own
+// target so "load the Opera build" is unambiguous and an Opera add-ons store
+// upload has a folder of its own, not a Chrome one relabelled by hand.
+const TARGETS = ['chrome', 'firefox', 'opera'];
 // A bare GUID, not an email-style id. An email-style id embeds a domain in
 // every published copy of the manifest and in AMO's public API, and an add-on
 // id can never be changed once a listing exists - so the domain would be
@@ -23,9 +27,7 @@ export function manifestFor(target, base) {
 
   const manifest = structuredClone(base);
 
-  if (target === 'chrome') {
-    manifest.background = { service_worker: 'background.js', type: 'module' };
-  } else {
+  if (target === 'firefox') {
     manifest.background = { scripts: ['background.js'], type: 'module' };
     manifest.browser_specific_settings = {
       gecko: {
@@ -42,6 +44,10 @@ export function manifestFor(target, base) {
     manifest.browser_specific_settings.gecko_android = {
       strict_min_version: '142.0',
     };
+  } else {
+    // chrome and opera are both Chromium: an MV3 service-worker background and
+    // no browser_specific_settings. Opera GX loads this manifest unchanged.
+    manifest.background = { service_worker: 'background.js', type: 'module' };
   }
 
   return manifest;

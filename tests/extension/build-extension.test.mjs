@@ -13,6 +13,16 @@ describe('manifestFor', () => {
     expect(m.background.scripts).toBeUndefined();
   });
 
+  it('builds Opera identically to Chrome (both Chromium)', () => {
+    // Opera / Opera GX is Chromium: same MV3 service worker, and none of the
+    // Firefox-only gecko block. If these two ever diverge the Opera build is
+    // no longer just "the Chrome build", which is the whole point of the target.
+    const opera = manifestFor('opera', BASE);
+    expect(opera.background).toEqual({ service_worker: 'background.js', type: 'module' });
+    expect(opera.browser_specific_settings).toBeUndefined();
+    expect(opera).toEqual(manifestFor('chrome', BASE));
+  });
+
   it('gives Firefox a scripts background and a gecko id', () => {
     const m = manifestFor('firefox', BASE);
     expect(m.background).toEqual({ scripts: ['background.js'], type: 'module' });
@@ -55,7 +65,7 @@ describe('manifestFor', () => {
     // The toolbar popup is the primary UI - about:addons -> Preferences is
     // several clicks deep and most people never find it. Both entry points
     // load one page so the two cannot drift apart.
-    for (const target of ['chrome', 'firefox']) {
+    for (const target of ['chrome', 'firefox', 'opera']) {
       const m = manifestFor(target, BASE);
       expect(m.action.default_popup).toBe('panel.html');
       expect(m.action.default_popup).toBe(m.options_ui.page);
