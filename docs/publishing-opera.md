@@ -13,29 +13,39 @@ Register at <https://auth.opera.com/account/signup>, then sign in to
 the AMO listing applies here: the display name and contact email on the
 developer account are public on every extension page. See `docs/publishing.md`.
 
-## Known risk: Manifest V3 may be refused
+## Manifest V3 is accepted
 
-Read this before spending time on the listing.
+Settled by doing it on 2026-07-27: the MV3 package uploaded first try. The
+forum reports of *"Manifest format version is not supported"*, and Opera's
+manifest documentation still describing V2, are both out of date. No MV2 fork
+is needed.
 
-This extension is Manifest V3 (`manifest_version: 3`). Opera's own manifest
-documentation still describes **V2** as the format to target and does not
-mention V3 at all, and developers report the upload form rejecting V3 packages
-with *"Manifest format version is not supported"* and spurious schema errors on
-valid V3 keys. Opera has separately said it is moving to an MV3-only store and
-has stopped accepting new MV2 uploads.
+## Submitted listing
 
-Those two positions cannot both be true forever, and the only way to find out
-which one the upload form implements today is to try it. So try the upload
-first, before writing any listing copy.
+Package **305717**, slug `foxy-jumpscare`, extension id
+`imdbnepnjfkfldahjmmhponddjbhmikm`, category Fun.
+Dashboard: <https://addons.opera.com/developer/package/305717/>
 
-If it is refused, there is no reasonable fix:
+## Dashboard behaviour worth knowing
 
-- Rewriting to MV2 is a real fork (service worker → background page,
-  `action` → `browser_action`) **and** new MV2 uploads are banned, so it lands
-  in a catch-22.
-- The fallback is sideloading, which already works and is documented in
-  `dist/packages/INSTALL_OPERA.txt`. Opera GX runs the MV3 build perfectly when
-  installed by hand — the store is the only thing objecting.
+- **Every text field is an inline editor.** Typing into it does not save —
+  a green ✓ appears beside the field and has to be clicked. Check all of them
+  before submitting; a field can look filled and still be unsaved.
+- **The status heading lies after a successful submit.** It keeps saying
+  "changes not submitted for the moderators review" until the page is reloaded.
+  Submitting again returns `400 This version can not be submitted for
+  moderation.`, which means *already submitted*, not *rejected*. Reload: the
+  Submit button goes disabled and the status becomes "follow the conversation
+  with moderators".
+- **The permission analyzer flags `scripting` as unused.** `attemptFire` calls
+  `browser.scripting.executeScript` where `browser` is a parameter, so the
+  literal `chrome.scripting` never appears for static analysis to find. The
+  permission is genuinely required — answer any moderator query in the
+  Conversation tab rather than removing it.
+- **The listing icon must be 64x64**, which the extension does not ship.
+  Generate one by temporarily adding `64` to `SIZES` in `tools/make-icons.mjs`,
+  then delete the file: shipping an icon the manifest never references would
+  trip the "no unused files" criterion.
 
 ## What to upload
 
