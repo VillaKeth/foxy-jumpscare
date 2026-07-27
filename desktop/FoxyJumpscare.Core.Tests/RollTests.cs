@@ -12,9 +12,12 @@ public class RollTests
     }
 
     [Fact]
-    public void DefaultOneInN_IsTheRarePreset()
+    public void DefaultOneInN_IsTheNormalPreset()
     {
-        Assert.Equal(300_000, Roll.DefaultOneInN);
+        // Must equal the extension's default (roll.mjs DEFAULT_ONE_IN_N = normal),
+        // so a fresh install of either app ships the same 1-in-100k rarity.
+        Assert.Equal(100_000, Roll.DefaultOneInN);
+        Assert.Equal(Roll.DefaultOneInN, Roll.Presets["normal"]);
     }
 
     [Fact]

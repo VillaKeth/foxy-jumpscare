@@ -22,7 +22,9 @@ public static class Roll
             ["terraria-faithful"] = 10_000,
         };
 
-    public const int DefaultOneInN = 300_000;
+    // Matches the extension's DEFAULT_ONE_IN_N (roll.mjs) - the "normal" preset,
+    // 1-in-100k. Both apps must ship the same out-of-box rarity.
+    public const int DefaultOneInN = 100_000;
 
     /// <summary>
     /// Inverse-transform sample of X ~ Geometric(p), p = 1/oneInN,

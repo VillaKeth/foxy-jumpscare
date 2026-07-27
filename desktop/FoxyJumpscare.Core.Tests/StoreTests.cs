@@ -18,7 +18,7 @@ public class StoreTests : IDisposable
     {
         var config = Store.LoadConfig(_dir);
         Assert.True(config.Enabled);
-        Assert.Equal(300_000, config.OneInN);
+        Assert.Equal(100_000, config.OneInN);
         Assert.Equal(30, config.TickSeconds);
         Assert.Equal(60, config.IdleThresholdSeconds);
         Assert.Equal(1500, config.FailsafeMarginMs);
@@ -46,7 +46,7 @@ public class StoreTests : IDisposable
     {
         // A half-written file after a power cut must not brick the app.
         File.WriteAllText(Path.Combine(_dir, "config.json"), "{ this is not json");
-        Assert.Equal(300_000, Store.LoadConfig(_dir).OneInN);
+        Assert.Equal(100_000, Store.LoadConfig(_dir).OneInN);
     }
 
     [Fact]
