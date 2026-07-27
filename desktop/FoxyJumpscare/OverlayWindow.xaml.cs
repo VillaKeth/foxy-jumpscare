@@ -6,7 +6,6 @@ using System.Windows.Media;
 using System.Windows.Threading;
 using FoxyJumpscare.Core;
 using FoxyJumpscare.Platform;
-using Forms = System.Windows.Forms;
 
 namespace FoxyJumpscare;
 
@@ -72,17 +71,18 @@ public partial class OverlayWindow : Window
 
         _failsafeMarginMs = failsafeMarginMs;
 
-        var screens = Forms.Screen.AllScreens;
-        var primary = Forms.Screen.PrimaryScreen ?? screens[0];
+        // Live monitor geometry, queried fresh here on every scare rather than
+        // read from a cached snapshot. A stale cache is exactly what mis-sized
+        // the Avalonia overlay under Remote Desktop; see Platform/WinDisplays.cs.
+        var monitors = WinDisplays.Query();
+        if (monitors.Count == 0)
+            monitors.Add(new System.Drawing.Rectangle(0, 0, 1920, 1080));
 
-        _primaryBounds = primary.Bounds;
-        _mirrorBounds = screens
-            .Where(s => s.DeviceName != primary.DeviceName)
-            .Select(s => s.Bounds)
-            .ToList();
+        _primaryBounds = monitors[0];              // WinDisplays returns primary first
+        _mirrorBounds = monitors.Skip(1).ToList();
 
         var virt = ScreenMath.VirtualBounds(
-            screens.Select(s => (s.Bounds.Left, s.Bounds.Top, s.Bounds.Width, s.Bounds.Height)));
+            monitors.Select(b => (b.Left, b.Top, b.Width, b.Height)));
         _virtualBounds = new System.Drawing.Rectangle(virt.Left, virt.Top, virt.Width, virt.Height);
 
         Player.Source = new Uri(videoPath);
@@ -112,7 +112,7 @@ public partial class OverlayWindow : Window
         if (!File.Exists(videoPath)) return;
 
         var window = new OverlayWindow(videoPath, failsafeMarginMs);
-        Trace($"Show() screens={Forms.Screen.AllScreens.Length}");
+        Trace($"Show() screens={WinDisplays.Query().Count}");
         window.Show();
         Trace("Play()");
         window.Player.Play();
