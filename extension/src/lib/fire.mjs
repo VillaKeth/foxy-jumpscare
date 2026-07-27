@@ -9,9 +9,10 @@ import { injectOverlayFn } from './inject.mjs';
 const FAILSAFE_MS = 8000;
 
 /**
- * Put the overlay up across the whole browser. Returns whether it actually
- * happened - the caller uses this to decide whether the roll was spent. A
- * refused fire must not consume it.
+ * Put the overlay up across the whole browser. Returns whether the scare
+ * landed somewhere the user can actually see - the caller uses this to decide
+ * whether the roll was spent. A fire nobody could have seen must not consume
+ * it.
  *
  * Every injectable tab in every window gets the overlay, not just the active
  * one. Scoping it to the active tab meant the scare silently did nothing
@@ -39,18 +40,31 @@ export async function attemptFire(browser) {
     )
   );
 
-  const injected = results.filter((r) => {
-    if (r.status !== 'fulfilled') return false;
+  const landed = new Set();
+  results.forEach((r, i) => {
+    if (r.status !== 'fulfilled') return;
     const result = r.value?.[0]?.result;
-    return result === 'injected' || result === 'already-present';
-  }).length;
+    if (result === 'injected' || result === 'already-present') landed.add(targets[i].id);
+  });
 
-  if (injected > 0) return true;
+  // Spending the roll requires the scare to land IN FRONT of the user: the
+  // active tab of a window that actually has focus. Counting any tab was the
+  // "heard it, never saw it" bug - a fire while the active tab was restricted
+  // (addons.mozilla.org, about:*) reached only background tabs, whose audio
+  // plays from pages the user cannot see.
+  const [activeTab] = await browser.tabs
+    .query({ active: true, lastFocusedWindow: true })
+    .catch(() => []);
+  const win = await browser.windows.getLastFocused().catch(() => null);
+  if (win?.focused && activeTab && landed.has(activeTab.id)) return true;
 
-  // Nothing anywhere would take it - every tab is a store page, a PDF, or
-  // about:config. Fall back to a standalone fullscreen window so the scare
-  // still lands. It cannot be transparent, but a black fullscreen Foxy beats
-  // nothing at all.
+  // The user-facing scare has nowhere to live in a tab - the active tab is a
+  // store page, a PDF, or about:config, or no browser window has focus at
+  // all (the retry path can fire from the background). A standalone
+  // fullscreen window carries it instead; safe to lean on since 0.1.1, when
+  // the overlay page learned to tear itself down. It cannot be transparent,
+  // but a black fullscreen Foxy beats nothing at all. Background-tab overlays
+  // from above still cover a tab switch mid-scream.
   try {
     await browser.windows.create({
       url: iframeUrl,
@@ -59,6 +73,8 @@ export async function attemptFire(browser) {
     });
     return true;
   } catch {
+    // Nothing user-visible happened - leave the roll unspent so the next
+    // tick retries.
     return false;
   }
 }

@@ -2,14 +2,20 @@ import { describe, it, expect, vi } from 'vitest';
 import { attemptFire } from '../../extension/src/lib/fire.mjs';
 
 function fakeBrowser({
-  tabs = [{ id: 7, url: 'https://example.com' }],
+  tabs = [{ id: 7, url: 'https://example.com', active: true }],
   executeScript,
   createWindow,
+  focused = true,
 } = {}) {
   return {
-    tabs: { query: vi.fn(async () => tabs) },
+    // The real query with { active: true, lastFocusedWindow: true } narrows to
+    // the focused window's active tab; this fake models one window.
+    tabs: { query: vi.fn(async (q = {}) => (q.active ? tabs.filter((t) => t.active) : tabs)) },
     scripting: { executeScript: executeScript ?? vi.fn(async () => [{ result: 'injected' }]) },
-    windows: { create: createWindow ?? vi.fn(async () => ({ id: 1 })) },
+    windows: {
+      create: createWindow ?? vi.fn(async () => ({ id: 1 })),
+      getLastFocused: vi.fn(async () => ({ focused })),
+    },
     runtime: { getURL: (p) => `chrome-extension://abc/${p}` },
   };
 }
@@ -43,7 +49,7 @@ describe('attemptFire', () => {
     const browser = fakeBrowser({
       tabs: [
         { id: 1, url: 'about:config' },
-        { id: 2, url: 'https://ok.example' },
+        { id: 2, url: 'https://ok.example', active: true },
         { id: 3, url: 'https://addons.mozilla.org/x' },
       ],
     });
@@ -57,7 +63,10 @@ describe('attemptFire', () => {
   it('succeeds when only some injections throw', async () => {
     let call = 0;
     const browser = fakeBrowser({
-      tabs: [{ id: 1, url: 'https://a.example' }, { id: 2, url: 'https://b.example' }],
+      tabs: [
+        { id: 1, url: 'https://a.example' },
+        { id: 2, url: 'https://b.example', active: true },
+      ],
       executeScript: vi.fn(async () => {
         call += 1;
         if (call === 1) throw new Error('Cannot access contents');
@@ -121,5 +130,67 @@ describe('attemptFire', () => {
       executeScript: vi.fn(async () => [{ result: 'already-present' }]),
     });
     expect(await attemptFire(browser)).toBe(true);
+  });
+
+  // --- the scare must land where the user is looking ------------------------
+  //
+  // "Heard it, never saw it": a fire while the active tab is restricted put
+  // the overlay only in background tabs, whose audio plays from tabs the user
+  // cannot see. Background-tab injections alone must not count as fired.
+
+  it('opens the standalone window when the ACTIVE tab is restricted, even though background tabs took the overlay', async () => {
+    const browser = fakeBrowser({
+      tabs: [
+        { id: 1, url: 'https://addons.mozilla.org/x', active: true },
+        { id: 2, url: 'https://ok.example' },
+      ],
+    });
+
+    expect(await attemptFire(browser)).toBe(true);
+    // background tab still gets it, so the scare follows a tab switch
+    expect(browser.scripting.executeScript).toHaveBeenCalledOnce();
+    expect(browser.scripting.executeScript.mock.calls[0][0].target).toEqual({ tabId: 2 });
+    expect(browser.windows.create).toHaveBeenCalledOnce();
+  });
+
+  it('opens the standalone window when injection into the active tab fails', async () => {
+    const browser = fakeBrowser({
+      tabs: [
+        { id: 1, url: 'https://a.example', active: true },
+        { id: 2, url: 'https://b.example' },
+      ],
+      executeScript: vi.fn(async ({ target }) => {
+        if (target.tabId === 1) throw new Error('tab is navigating');
+        return [{ result: 'injected' }];
+      }),
+    });
+
+    expect(await attemptFire(browser)).toBe(true);
+    expect(browser.windows.create).toHaveBeenCalledOnce();
+  });
+
+  it('opens the standalone window when no browser window has focus', async () => {
+    // The retry path: a pending fire can land on a tick while the whole
+    // browser sits in the background. An overlay in any tab is invisible
+    // then - only the standalone window actually reaches the screen.
+    const browser = fakeBrowser({ focused: false });
+
+    expect(await attemptFire(browser)).toBe(true);
+    expect(browser.windows.create).toHaveBeenCalledOnce();
+  });
+
+  it('does not spend the roll when nothing user-visible happened', async () => {
+    // Background tabs took the overlay but the active tab is restricted and
+    // the window would not open: the user saw nothing, so the roll must
+    // survive for the next tick.
+    const browser = fakeBrowser({
+      tabs: [
+        { id: 1, url: 'about:config', active: true },
+        { id: 2, url: 'https://ok.example' },
+      ],
+      createWindow: vi.fn(async () => { throw new Error('no window'); }),
+    });
+
+    expect(await attemptFire(browser)).toBe(false);
   });
 });
