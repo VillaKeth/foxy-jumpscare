@@ -48,6 +48,48 @@ internal static class WinDisplays
     [DllImport("shcore.dll")]
     private static extern int GetDpiForMonitor(IntPtr hMonitor, int dpiType, out uint dpiX, out uint dpiY);
 
+    [DllImport("user32.dll")]
+    private static extern bool SetWindowPos(IntPtr hWnd, IntPtr insertAfter, int x, int y, int cx, int cy, uint flags);
+
+    [DllImport("user32.dll")]
+    private static extern bool GetWindowRect(IntPtr hWnd, out RECT rect);
+
+    private static readonly IntPtr HWND_TOPMOST = new(-1);
+    private const uint SWP_NOACTIVATE = 0x0010;
+    private const uint SWP_SHOWWINDOW = 0x0040;
+
+    /// <summary>
+    /// Make a window cover exactly this physical-pixel rectangle.
+    ///
+    /// This drives the HWND straight from Win32 instead of going through
+    /// Avalonia's Position/Width/Height and WindowState.FullScreen. Those route
+    /// the final size through Avalonia's cached screen list, which does not
+    /// refresh when a Remote Desktop session hands the desktop back to the
+    /// physical monitors - and because it is applied last, the stale cache
+    /// overrode the live geometry the caller had just measured. The overlay came
+    /// up at the remote machine's working area (a 1440x810 screen less its 57px
+    /// taskbar) on a 1920x1080 monitor, every scare, until the app restarted.
+    ///
+    /// Nothing here is remembered between calls, so there is no cache left to go
+    /// stale. Topmost with the monitor's full bounds also covers the taskbar,
+    /// which is what fullscreen was there for.
+    /// </summary>
+    public static bool Cover(IntPtr hwnd, PixelRect bounds) =>
+        hwnd != IntPtr.Zero &&
+        SetWindowPos(hwnd, HWND_TOPMOST, bounds.X, bounds.Y, bounds.Width, bounds.Height,
+                     SWP_NOACTIVATE | SWP_SHOWWINDOW);
+
+    /// <summary>
+    /// A window's real on-screen rectangle, so placement can be checked rather
+    /// than assumed. The bug this guards against printed a correct intended size
+    /// in the log while the window on screen was a different size entirely.
+    /// </summary>
+    public static PixelRect? RectOf(IntPtr hwnd)
+    {
+        if (hwnd == IntPtr.Zero || !GetWindowRect(hwnd, out var r)) return null;
+        return new PixelRect(r.Left, r.Top, r.Right - r.Left, r.Bottom - r.Top);
+    }
+
     /// <summary>Every monitor's physical-pixel bounds and DPI scaling, primary first.</summary>
     public static List<(PixelRect Bounds, double Scaling)> Query()
     {

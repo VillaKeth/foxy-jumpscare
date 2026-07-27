@@ -1,4 +1,5 @@
 using System.Runtime.InteropServices;
+using System.Runtime.Versioning;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Layout;
@@ -261,6 +262,16 @@ public static class OverlayWindow
 
     private static void Place(Window w, PixelRect bounds, double scaling)
     {
+        // Windows drives the HWND directly: Avalonia's FullScreen sizes from a
+        // cached screen list that survives an RDP round trip stale, and being
+        // applied last it beat the live geometry measured just above. See
+        // WinDisplays.Cover.
+        if (OperatingSystem.IsWindows())
+        {
+            PlaceWin32(w, bounds);
+            return;
+        }
+
         // Physical-pixel position, then FullScreen fills that monitor - which
         // sidesteps per-monitor DPI-to-DIP conversion.
         w.Position = bounds.Position;
@@ -282,6 +293,47 @@ public static class OverlayWindow
         if (Trace)
             Log($"placed monitor {bounds.Width}x{bounds.Height} @({bounds.X},{bounds.Y}) " +
                 $"scaling={s:0.##} -> window {w.Width:0}x{w.Height:0} DIP");
+    }
+
+    /// <summary>
+    /// Cover a monitor on Windows, in physical pixels, with no Avalonia sizing
+    /// in the path - then check the window actually landed there and correct it
+    /// once if it did not.
+    ///
+    /// The check is not paranoia about this specific call: the bug it replaces
+    /// logged a perfectly correct intended size while the window on screen was
+    /// the wrong size, so intent alone is not evidence. Measuring the result
+    /// means any future source of divergence self-corrects and says so.
+    /// </summary>
+    [SupportedOSPlatform("windows")]
+    private static void PlaceWin32(Window w, PixelRect bounds)
+    {
+        var hwnd = w.TryGetPlatformHandle()?.Handle ?? IntPtr.Zero;
+        if (hwnd == IntPtr.Zero)
+        {
+            // No native handle yet. Fall back rather than skip: a scare at the
+            // wrong size still beats no scare at all.
+            w.Position = bounds.Position;
+            w.WindowState = WindowState.FullScreen;
+            Log("no HWND at placement time; fell back to Avalonia FullScreen");
+            return;
+        }
+
+        Platform.WinDisplays.Cover(hwnd, bounds);
+
+        if (Trace)
+            Log($"placed monitor {bounds.Width}x{bounds.Height} @({bounds.X},{bounds.Y}) via Win32");
+
+        DispatcherTimer.RunOnce(() =>
+        {
+            if (_tearing) return;
+            var actual = Platform.WinDisplays.RectOf(hwnd);
+            if (actual is not { } r || r == bounds) return;
+
+            Log($"placement drifted: wanted {bounds.Width}x{bounds.Height} @({bounds.X},{bounds.Y}), " +
+                $"got {r.Width}x{r.Height} @({r.X},{r.Y}) - reasserting");
+            Platform.WinDisplays.Cover(hwnd, bounds);
+        }, TimeSpan.FromMilliseconds(250));
     }
 
     public static void Close()
