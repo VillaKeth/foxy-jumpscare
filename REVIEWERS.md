@@ -30,7 +30,7 @@ mkdir assets
 cp <submitted-package>/foxy.webm assets/foxy.webm
 npm install
 npm run build
-npm run package        # -> dist/packages/foxy-jumpscare-firefox-v0.1.1.zip
+npm run package        # -> dist/packages/foxy-jumpscare-firefox-v0.1.2.zip
 ```
 
 Packaging is deterministic — fixed archive timestamps, no random input — so
