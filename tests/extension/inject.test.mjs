@@ -66,6 +66,13 @@ describe('injectOverlayFn', () => {
     expect(iframe.style.border).toBe('0');
   });
 
+  it('backs the iframe with black rather than the page underneath', () => {
+    // Transparent here means the page shows through until the frame document
+    // paints, which on a white site is a flashbang at the moment of the scare.
+    injectOverlayFn(URL_, 3000);
+    expect(dom.appended[0].style.background).toBe('#000');
+  });
+
   it('delegates autoplay permission to the iframe', () => {
     injectOverlayFn(URL_, 3000);
     // Without this the cross-origin iframe inherits the page's autoplay

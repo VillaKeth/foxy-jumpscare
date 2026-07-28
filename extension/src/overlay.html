@@ -2,10 +2,20 @@
 <meta charset="utf-8">
 <title>foxy</title>
 <style>
+  /*
+   * Opaque black, not transparent, and it is the whole point of the overlay's
+   * look. Composited over the live page, Foxy arrives on top of whatever was
+   * already there - and most of the web is white, so the scare reads as a
+   * flashbang with a fox in it rather than as the dark reveal the desktop app
+   * gets for free from its fullscreen black window. Black here matches that.
+   *
+   * The video still carries alpha: over this backdrop it costs nothing and
+   * keeps the keyed edge clean instead of baking a second black composite.
+   */
   html, body {
     margin: 0;
     height: 100%;
-    background: transparent;
+    background: #000;
     overflow: hidden;
   }
   video {

@@ -15,15 +15,17 @@ build step below.
 | `foxy-src.mp4` | no | **Source.** The raw greenscreen clip, as downloaded. Never consumed directly by either app. |
 | `foxy.webm` | no | *Derived.* VP9 + alpha, Opus audio. Extension only. |
 | `foxy.mp4` | no | *Derived.* VP9 keyed over black, AAC audio, in an MP4 container. Desktop only. |
+| `foxy-icon.png` | no | **Source.** A still render, transparent background. Feeds both icon builds. |
 | `foxy.ico` | no | *Derived.* Desktop tray icon, cropped to the head from a source still. |
 | `pack.json` | yes | Manifest. |
 
 Two derived formats because the targets genuinely differ:
 
-- **Extension → `foxy.webm`.** MP4/H.264 cannot carry an alpha channel at all, and the
-  extension overlay is transparent over the live page. WebM/VP9 is also the safer codec
-  bet in Firefox, whose H.264 support depends on OS decoders while VP9 is always
-  available in-browser.
+- **Extension → `foxy.webm`.** The overlay backdrop is opaque black, like the desktop's
+  (see `extension/src/overlay.html`) — but the clip still carries alpha, which keeps the
+  keyed edge clean instead of baking a second black composite, and MP4/H.264 cannot
+  carry an alpha channel at all. WebM/VP9 is also the safer codec bet in Firefox, whose
+  H.264 support depends on OS decoders while VP9 is always available in-browser.
 - **Desktop → `foxy.mp4`.** The desktop overlay is fullscreen black, so alpha buys
   nothing — but the codec still matters. The file is **VP9 in an MP4 container**, not
   H.264: H.264 is patent-encumbered, and Fedora and Arch ship VLC without its decoder,
@@ -118,11 +120,13 @@ a canvas, and read the pixels. Against the synthetic test clip this returns
 Playback length comes from the video itself, not from config. The keying values live
 here so a rebuild reproduces the tuned result rather than the defaults.
 
-## The tray icon
+## The icons
 
-The desktop tray icon is a separate derived asset, cropped to Foxy's head from a source
-still (a full-body render is an unreadable smudge at 16px). Like the video, it is
-gitignored and never committed.
+Both icons are derived from `foxy-icon.png`, cropped to Foxy's head — a full-body render
+is an unreadable smudge at 16px. Like the video, both outputs are gitignored and never
+committed.
+
+**Desktop tray:**
 
 ```powershell
 pwsh tools/build-tray-icon.ps1 -Source "$HOME\Downloads\foxy.png"
@@ -133,10 +137,23 @@ build copies it next to the exe; without it the tray falls back to a generic ico
 default crop suits the Withered Foxy still in this pack — override with `-CropX/-CropY/
 -CropSide` for a different image.
 
-This is deliberately the desktop only. The **extension** icon ships original art
-(`tools/make-icons.mjs`), because that icon is the one image that lands on the public
-store listing, in the toolbar, and in AMO's public API — the most-scanned placement
-there is, and the wrong place for copyrighted frames.
+**Extension:**
+
+```powershell
+npm run icons     # also runs as the first half of npm run build
+```
+
+Emits `extension/src/icons/icon-{16,32,48,96,128}.png` via ffmpeg. Same idea, different
+crop flags (`--crop-x/--crop-y/--crop-side`, `--source`), and `-pix_fmt rgba` throughout
+because the source render is transparent outside the subject.
+
+⚠️ **The extension icon is the most public artifact in the project** — it lands on the
+store listing, in the toolbar, and in AMO's public API, the most-scanned placement there
+is. So `tools/make-icons.mjs` falls back to **original art** whenever `foxy-icon.png` is
+absent, and that fallback is what a clone of this repo builds and what a store build
+should ship unless someone has decided otherwise on purpose. Dropping the pack image in
+switches the icon to copyrighted frames locally; publishing that is a separate,
+deliberate call.
 
 ## Swapping the pack
 

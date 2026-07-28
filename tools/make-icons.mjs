@@ -2,19 +2,30 @@
 /**
  * Generate the extension icons.
  *
- * Deliberately original art, not a frame of the video: the icon is the one
- * image that ends up on the store listing, in the toolbar, and in every
- * screenshot of the browser's extension list. Deriving it from copyrighted
- * material would put that material in all of those places.
+ * Two sources, in priority order:
  *
- * A stylised fox head - bold shapes only, because it has to survive being
- * rendered at 16px. No image library; PNG is encoded here with zlib, which
- * node already has.
+ *  1. `assets/foxy-icon.png`, if the local pack has one. Cropped to the head
+ *     and resized, exactly like the desktop tray icon - a full-body render is
+ *     an unreadable smudge at 16px.
+ *  2. Otherwise, original art drawn below: a stylised fox head, bold shapes
+ *     only, so it survives 16px. No image library; PNG is encoded here with
+ *     zlib, which node already has.
+ *
+ * The fallback is not a consolation prize. It is what a clone of this repo
+ * builds, because the pack image is copyrighted FNAF material and gitignored
+ * like every other asset. The icon is also the most public artifact there is -
+ * store listing, toolbar, AMO's public API - so deriving it from the pack is a
+ * deliberate local choice, not the default. See assets/PACK.md.
+ *
+ * The output directory is derived, not tracked.
  *
  * Usage: npm run icons
+ *        node tools/make-icons.mjs --source path.png --crop-x 145 --crop-y 8 --crop-side 360
  */
 import { deflateSync } from 'node:zlib';
 import { writeFile, mkdir } from 'node:fs/promises';
+import { existsSync } from 'node:fs';
+import { spawnSync } from 'node:child_process';
 import { join, dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { crc32 } from './lib/crc32.mjs';
@@ -22,6 +33,10 @@ import { crc32 } from './lib/crc32.mjs';
 const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const OUT_DIR = join(REPO_ROOT, 'extension', 'src', 'icons');
 const SIZES = [16, 32, 48, 96, 128];
+
+// Tuned to the Withered Foxy render in this pack: ear tips to just under the
+// open jaw. Override for a different source image.
+const DEFAULT_CROP = { x: 145, y: 8, side: 360 };
 
 // --- minimal PNG encoder ---------------------------------------------------
 
@@ -130,9 +145,76 @@ function render(size) {
   return rgba;
 }
 
+// --- deriving from the pack image ------------------------------------------
+
+/** `--crop-x 145` -> `{ 'crop-x': '145' }`. Absent flags stay undefined. */
+function flags(argv) {
+  const out = {};
+  for (let i = 0; i < argv.length; i += 1) {
+    if (argv[i].startsWith('--')) out[argv[i].slice(2)] = argv[i + 1];
+  }
+  return out;
+}
+
+/**
+ * Crop to the head, then resize. Lanczos rather than the default: at 16px the
+ * difference between a fox and a smudge is entirely in the resampling.
+ *
+ * -pix_fmt rgba is load-bearing - the source render is transparent outside the
+ * subject, and losing that alpha puts a black box in the toolbar.
+ */
+function deriveIcon(source, crop, size, outFile) {
+  const filter = [
+    `crop=${crop.side}:${crop.side}:${crop.x}:${crop.y}`,
+    `scale=${size}:${size}:flags=lanczos`,
+  ].join(',');
+
+  const res = spawnSync(
+    'ffmpeg',
+    ['-y', '-v', 'error', '-i', source, '-vf', filter, '-pix_fmt', 'rgba', outFile],
+    { encoding: 'utf8' }
+  );
+
+  if (res.error) throw new Error(`ffmpeg not runnable: ${res.error.message}`);
+  if (res.status !== 0) throw new Error(res.stderr.trim() || `ffmpeg exited ${res.status}`);
+}
+
+// --- main ------------------------------------------------------------------
+
+const argv = flags(process.argv.slice(2));
+const source = resolve(argv.source ?? join(REPO_ROOT, 'assets', 'foxy-icon.png'));
+const crop = {
+  x: Number(argv['crop-x'] ?? DEFAULT_CROP.x),
+  y: Number(argv['crop-y'] ?? DEFAULT_CROP.y),
+  side: Number(argv['crop-side'] ?? DEFAULT_CROP.side),
+};
+
 await mkdir(OUT_DIR, { recursive: true });
+
+// An explicit --source that is missing is a typo, not a fallback: fail loudly
+// rather than silently shipping the drawn art the caller did not ask for.
+if (argv.source && !existsSync(source)) {
+  console.error(`\nSource image not found: ${source}\n`);
+  process.exit(1);
+}
+
+const usePack = existsSync(source);
+
+// Without a pack image, icons already on disk are left alone. That is what
+// makes the submitted package reproducible: an AMO reviewer copies icons/*.png
+// out of it, builds, and gets the same bytes back - exactly as they already do
+// with foxy.webm. Redrawing over them here would guarantee a mismatch instead.
+// Delete the directory to force the original art back.
+if (!usePack && SIZES.every((size) => existsSync(join(OUT_DIR, `icon-${size}.png`)))) {
+  console.log(`  keeping existing icons in ${OUT_DIR} (no pack image)`);
+  process.exit(0);
+}
+
+console.log(usePack ? `  from ${source}` : '  from original art (no pack image)');
+
 for (const size of SIZES) {
   const file = join(OUT_DIR, `icon-${size}.png`);
-  await writeFile(file, encodePng(size, render(size)));
+  if (usePack) deriveIcon(source, crop, size, file);
+  else await writeFile(file, encodePng(size, render(size)));
   console.log(`  ${size}x${size}  ${file}`);
 }
