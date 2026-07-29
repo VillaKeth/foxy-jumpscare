@@ -66,11 +66,12 @@ describe('injectOverlayFn', () => {
     expect(iframe.style.border).toBe('0');
   });
 
-  it('backs the iframe with black rather than the page underneath', () => {
-    // Transparent here means the page shows through until the frame document
-    // paints, which on a white site is a flashbang at the moment of the scare.
+  it('leaves the iframe transparent so the page shows through', () => {
+    // The effect is Foxy keyed over whatever you were reading. An opaque
+    // backdrop here makes it a video player instead - 0.1.3 shipped that by
+    // mistake and 0.1.4 took it back out.
     injectOverlayFn(URL_, 3000);
-    expect(dom.appended[0].style.background).toBe('#000');
+    expect(dom.appended[0].style.background).toBe('transparent');
   });
 
   it('delegates autoplay permission to the iframe', () => {

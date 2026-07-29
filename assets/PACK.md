@@ -21,11 +21,12 @@ build step below.
 
 Two derived formats because the targets genuinely differ:
 
-- **Extension → `foxy.webm`.** The overlay backdrop is opaque black, like the desktop's
-  (see `extension/src/overlay.html`) — but the clip still carries alpha, which keeps the
-  keyed edge clean instead of baking a second black composite, and MP4/H.264 cannot
-  carry an alpha channel at all. WebM/VP9 is also the safer codec bet in Firefox, whose
-  H.264 support depends on OS decoders while VP9 is always available in-browser.
+- **Extension → `foxy.webm`.** MP4/H.264 cannot carry an alpha channel at all, and the
+  extension overlay is transparent over the live page — Foxy lunges over whatever you
+  were reading, which is the entire effect. (0.1.3 briefly shipped an opaque black
+  backdrop; 0.1.4 took it back out. Verified transparent in Gecko, not just Chromium.)
+  WebM/VP9 is also the safer codec bet in Firefox, whose H.264 support depends on OS
+  decoders while VP9 is always available in-browser.
 - **Desktop → `foxy.mp4`.** The desktop overlay is fullscreen black, so alpha buys
   nothing — but the codec still matters. The file is **VP9 in an MP4 container**, not
   H.264: H.264 is patent-encumbered, and Fedora and Arch ship VLC without its decoder,

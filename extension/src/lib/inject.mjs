@@ -43,10 +43,10 @@ export function injectOverlayFn(iframeUrl, failsafeMs) {
     border: '0',
     zIndex: '2147483647',
     pointerEvents: 'none',
-    // Black on the element as well as inside the frame. The frame document
-    // paints a moment after the element is attached, and a transparent gap
-    // there is a flash of the page at the exact instant the scare lands.
-    background: '#000',
+    // Transparent so the page stays visible behind the keyed video - see the
+    // note in overlay.html. colorScheme 'normal' stops a dark-mode host from
+    // handing the frame a painted backdrop of its own.
+    background: 'transparent',
     colorScheme: 'normal',
   });
 

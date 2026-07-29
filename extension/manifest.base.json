@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Foxy Jumpscare",
-  "version": "0.1.3",
+  "version": "0.1.4",
   "description": "A rare jumpscare while you browse. A 1 in 100,000 chance every active second.",
   "icons": {
     "16": "icons/icon-16.png",

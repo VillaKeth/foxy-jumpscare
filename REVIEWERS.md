@@ -31,7 +31,7 @@ cp <submitted-package>/foxy.webm assets/foxy.webm
 cp <submitted-package>/icons/*.png extension/src/icons/
 npm install
 npm run build
-npm run package        # -> dist/packages/foxy-jumpscare-firefox-v0.1.3.zip
+npm run package        # -> dist/packages/foxy-jumpscare-firefox-v0.1.4.zip
 ```
 
 `npm run build` regenerates the icons only if `extension/src/icons/` is empty,

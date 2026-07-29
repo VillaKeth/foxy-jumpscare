@@ -55,8 +55,8 @@ npm run package
 Output:
 
 ```
-dist/packages/foxy-jumpscare-chrome-v0.1.3.zip     ~248 KB
-dist/packages/foxy-jumpscare-firefox-v0.1.3.zip    ~248 KB
+dist/packages/foxy-jumpscare-chrome-v0.1.4.zip     ~248 KB
+dist/packages/foxy-jumpscare-firefox-v0.1.4.zip    ~248 KB
 ```
 
 Bump `version` in `extension/manifest.base.json` before every resubmission —
@@ -179,7 +179,7 @@ misleading and an obvious flag during review.
 
 1. Register at <https://chrome.google.com/webstore/devconsole> — **$5 one-time**,
    per account.
-2. New item → upload `foxy-jumpscare-chrome-v0.1.3.zip`.
+2. New item → upload `foxy-jumpscare-chrome-v0.1.4.zip`.
 3. Fill in the listing copy, screenshots, and the 128×128 icon (already in the
    package).
 4. Privacy tab: paste the hosted policy URL, tick the data-use certifications,
@@ -204,7 +204,7 @@ category, support contact) that `web-ext` has no way to supply.
    - **On this site** — the public listing.
    - **On your own** — private signing. Same as `npm run sign:firefox`; see
      `docs/install-firefox.md`.
-3. Upload `dist/packages/foxy-jumpscare-firefox-v0.1.3.zip`.
+3. Upload `dist/packages/foxy-jumpscare-firefox-v0.1.4.zip`.
 4. Automated validation runs `addons-linter` — the same tool as
    `npm run lint:firefox`, already clean, so this passes without comment.
 5. **Source code:** not required. The build copies plain, readable JavaScript;
