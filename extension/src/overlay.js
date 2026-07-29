@@ -1,6 +1,23 @@
 const DONE = 'foxy:overlay-done';
 const video = document.getElementById('foxy');
 
+// This page loads in two completely different situations, and they want
+// opposite backgrounds.
+//
+//   In an iframe   - injected over a live page. Transparent, so Foxy lunges
+//                    over whatever you were reading. That is the whole effect.
+//   In its own window - the fallback when no tab would take the injection
+//                    (fire.mjs). There is no page behind it, so "transparent"
+//                    resolves to the browser's blank canvas: a FULLSCREEN
+//                    WHITE FLASH with a fox in it.
+//
+// The stylesheet can only pick one, and it picked transparent, so every
+// fallback scare since 0.1.1 has been white. fire.mjs always assumed this
+// window was black - see its comment. Now it actually is.
+if (window.parent === window) {
+  document.documentElement.style.background = '#000';
+}
+
 // Absolute ceiling on how long the overlay may live, armed before playback so
 // it holds even if the video never decodes. A clip broken badly enough raises
 // neither 'ended' nor 'error', and the standalone fallback window - unlike the

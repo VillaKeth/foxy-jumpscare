@@ -75,6 +75,15 @@ test('still fires when every tab is privileged, via a standalone window', async 
     timeout: 10_000,
   });
   expect(overlayWindow.url()).toContain('overlay.html');
+
+  // Black, because there is no page behind this one. The stylesheet says
+  // transparent for the injected-iframe case, and in a window of its own
+  // "transparent" resolves to the browser's blank canvas - a fullscreen white
+  // flash with a fox in it. That shipped from 0.1.1 to 0.1.4.
+  const background = await overlayWindow.evaluate(
+    () => getComputedStyle(document.documentElement).backgroundColor
+  );
+  expect(background).toBe('rgb(0, 0, 0)');
 });
 
 test('the overlay tears itself down', async ({ context, worker }) => {

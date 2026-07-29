@@ -50,7 +50,7 @@ Dashboard: <https://addons.opera.com/developer/package/305717/>
 ## What to upload
 
 ```
-dist/packages/foxy-jumpscare-opera-v0.1.4.zip
+dist/packages/foxy-jumpscare-opera-v0.1.5.zip
 ```
 
 Rebuild with `npm run build && npm run package` if the version has moved on.

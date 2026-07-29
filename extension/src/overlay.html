@@ -7,11 +7,11 @@
    * out of the greenscreen and lunging over whatever you were actually
    * reading. An opaque backdrop turns that into a video player.
    *
-   * 0.1.3 shipped this as #000 to match the desktop app's fullscreen black
-   * window, on the theory that landing on a white page read as a flashbang.
-   * It does flash - but the flash is the page, not the overlay, and blacking
-   * it out threw away the point of keying the video in the first place.
-   * Reverted in 0.1.4. Do not "fix" the flash here; there is nothing to fix.
+   * This is the right value for the iframe case only. When the page loads in
+   * a window of its own - the fallback in fire.mjs - transparent resolves to
+   * the browser's blank canvas and the scare is a fullscreen white flash.
+   * overlay.js detects that case and paints it black; see the note there.
+   * Do not resolve the two cases by changing this line.
    */
   html, body {
     margin: 0;
