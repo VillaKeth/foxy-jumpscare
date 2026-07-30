@@ -37,11 +37,13 @@ describe('buildMatteArgs', () => {
     expect(filter).not.toContain('overlay=');
   });
 
-  it('encodes 4:4:4, which VP9 only allows in profile 1', () => {
-    // At 4:2:0 the half-resolution chroma planes bleed across the seam between
-    // the two halves and fringe the matte edge.
-    expect(args[args.indexOf('-pix_fmt') + 1]).toBe('yuv444p');
-    expect(args[args.indexOf('-profile:v') + 1]).toBe('1');
+  it('stays on VP9 profile 0, the most widely decodable combination', () => {
+    // Regression: this shipped as 4:4:4 / profile 1 and a recipient's libVLC
+    // could not build an I444 -> RV32 conversion, so the scare rendered
+    // nothing at all. The matte is greyscale and its detail is in luma, which
+    // 4:2:0 keeps at full resolution, so 4:4:4 bought almost nothing.
+    expect(args[args.indexOf('-pix_fmt') + 1]).toBe('yuv420p');
+    expect(args[args.indexOf('-profile:v') + 1]).toBe('0');
   });
 
   it('encodes at a higher quality than the opaque cut', () => {

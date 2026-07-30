@@ -173,7 +173,23 @@ public static class OverlayWindow
             else if (string.IsNullOrEmpty(aout) && OperatingSystem.IsWindows())
                 aout = "waveout";
 
-            _libvlc = string.IsNullOrEmpty(aout) ? new LibVLC() : new LibVLC($"--aout={aout}");
+            // libVLC logs to stderr itself, and on Linux it is loud: while it
+            // hunts for a chroma conversion path it prints "Failed to create
+            // video converter" and "chain: Too high level of recursion" dozens
+            // of times per scare, then finds a path and renders fine. Measured
+            // on the same clip: 228 such lines, and 21 frames on screen.
+            //
+            // A recipient running it from a terminal reasonably read that as
+            // the app failing. It is pre-existing - the opaque foxy.mp4 build
+            // produces the same spam - and it is not diagnostic of anything, so
+            // it is silenced unless FOXY_TRACE asked for detail. --quiet only
+            // gates libVLC's own stderr; the Log callback below is separate and
+            // still fires, so tracing loses nothing.
+            var opts = new List<string>();
+            if (!string.IsNullOrEmpty(aout)) opts.Add($"--aout={aout}");
+            if (!Trace) opts.Add("--quiet");
+
+            _libvlc = opts.Count == 0 ? new LibVLC() : new LibVLC(opts.ToArray());
 
             if (Trace)
                 _libvlc.Log += (_, e) =>

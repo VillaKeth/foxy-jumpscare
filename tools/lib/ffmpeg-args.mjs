@@ -52,10 +52,25 @@ export function buildAlphaArgs({ src, out, chromakey, bitrate = '2M' }) {
  * The colour half is flattened over black, which is precisely premultiplied
  * alpha, so the blit needs no divide and dark edge pixels do not halo.
  *
- * 4:4:4 (hence VP9 profile 1) is not optional. At 4:2:0 the chroma planes are
- * half resolution, so the two halves bleed into each other across the seam and
- * the matte edge softens into a fringe. The luma plane carries the matte at
- * full resolution either way; the seam is the problem.
+ * 4:2:0, VP9 profile 0 - the same combination as buildOpaqueArgs, which has
+ * played on stock Ubuntu, Fedora and Arch. Profile 0 is the widest-support
+ * baseline, so it is the right default for a file that has to decode on a
+ * stranger's distro.
+ *
+ * It was briefly 4:4:4 / profile 1, on the theory that half-resolution chroma
+ * would let the two halves bleed across the seam. That worry was overstated:
+ * the matte is greyscale, so its detail lives entirely in LUMA, which 4:2:0
+ * keeps at full resolution - the silhouette stays sharp. Subsampling only
+ * shares chroma, and only across the one sample straddling the join, so the
+ * error is confined to the first pixel column or two of the matte. That is
+ * frame x=0, which is background.
+ *
+ * Measured on Linux, same clip, same binary: 4:4:4 produced no libVLC
+ * converter complaints and 4:2:0 produced 228 of them - but BOTH rendered
+ * every frame, and so did the plain 1280-wide foxy.mp4. Those messages are
+ * libVLC narrating a failed conversion path before finding a working one, not
+ * a failure. They are silenced at the source now (see OverlayWindow's --quiet)
+ * rather than steered around by picking a codec profile on log noise.
  *
  * Note what flattens the colour half: `premultiply=inplace=1`, NOT an overlay
  * onto a `color=c=black` source the way buildOpaqueArgs does it. That matters
@@ -73,7 +88,7 @@ export function buildMatteArgs({ src, out, chromakey, crf = 18 }) {
     `[0:v]${chromakeyFilter(chromakey)},split=2[k1][k2]`,
     `[k1]premultiply=inplace=1,format=gbrp[colour]`,
     `[k2]alphaextract,format=gbrp[matte]`,
-    `[colour][matte]hstack=inputs=2,format=yuv444p[v]`,
+    `[colour][matte]hstack=inputs=2,format=yuv420p[v]`,
   ].join(';');
 
   return [
@@ -83,9 +98,10 @@ export function buildMatteArgs({ src, out, chromakey, crf = 18 }) {
     '-map', '[v]',
     '-map', '0:a?',
     '-c:v', 'libvpx-vp9',
-    // 4:4:4 is only legal in VP9 profile 1; libvpx will not infer it.
-    '-profile:v', '1',
-    '-pix_fmt', 'yuv444p',
+    // Profile 0. Anything higher narrows which libVLC builds can decode AND
+    // convert it - see the note above; a recipient lost the picture entirely.
+    '-profile:v', '0',
+    '-pix_fmt', 'yuv420p',
     '-b:v', '0',
     // Tighter than the opaque build's 30. Quantisation noise in the colour half
     // is a jumpscare nobody inspects; the same noise in the MATTE is a visible
