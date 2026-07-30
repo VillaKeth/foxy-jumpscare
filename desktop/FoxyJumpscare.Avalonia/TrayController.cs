@@ -61,6 +61,11 @@ public sealed class TrayController : IDisposable
 
         BuildTray();
 
+        // Pay libVLC's plugin-loading cost now, in the background, rather than
+        // on the first scare - where it was measured at 360ms of dead time
+        // before Foxy appeared. See OverlayWindow.Prewarm.
+        Views.OverlayWindow.Prewarm();
+
         _timer = new Timer(TimeSpan.FromSeconds(_config.TickSeconds)) { AutoReset = true };
         _timer.Elapsed += OnTick;
         _timer.Start();
@@ -239,12 +244,14 @@ public sealed class TrayController : IDisposable
         var matte = System.IO.Path.Combine(AppContext.BaseDirectory, "foxy-alpha.mp4");
         if (System.IO.File.Exists(matte))
         {
-            OverlayWindow.ShowAll(matte, _config.FailsafeMarginMs, sideBySideMatte: true);
+            OverlayWindow.ShowAll(matte, _config.FailsafeMarginMs,
+                sideBySideMatte: true, holdMs: _config.OverlayHoldMs);
             return true;
         }
 
         var video = System.IO.Path.Combine(AppContext.BaseDirectory, "foxy.mp4");
-        OverlayWindow.ShowAll(System.IO.File.Exists(video) ? video : null, _config.FailsafeMarginMs);
+        OverlayWindow.ShowAll(System.IO.File.Exists(video) ? video : null,
+            _config.FailsafeMarginMs, holdMs: _config.OverlayHoldMs);
         return true;
     }
 

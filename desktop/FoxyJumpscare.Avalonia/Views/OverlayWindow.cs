@@ -58,10 +58,92 @@ public static class OverlayWindow
     private static int _frames;
     private static int _marginMs = 1500;
 
+    /// <summary>How long the last frame holds after the clip ends.</summary>
+    private static int _holdMs = 600;
+
+    /// <summary>
+    /// Time from "the scare fired" to each stage of getting a picture up. The
+    /// gap that matters is fire -> first frame: until then the overlay is an
+    /// empty transparent window and, to the user, nothing has happened yet.
+    /// </summary>
+    private static readonly System.Diagnostics.Stopwatch _since = new();
+
     private static readonly List<Window> _windows = new();
     private static readonly List<Image> _images = new();
 
+    /// <summary>
+    /// Serialises <see cref="Vlc"/>, which is now reached from two threads: the
+    /// UI thread when a scare fires, and a background thread at startup via
+    /// <see cref="Prewarm"/>.
+    /// </summary>
+    private static readonly object _vlcGate = new();
+
+    /// <summary>
+    /// Build the libVLC instance ahead of time, off the UI thread.
+    ///
+    /// Measured on the real machine: the FIRST scare of a session spent 360ms
+    /// inside Core.Initialize() and plugin loading before a single frame
+    /// reached the screen, against 25ms for every scare after it. That is the
+    /// whole of the "sometimes Foxy takes a moment to jump" report - it is not
+    /// decode, and it is not the overlay. Nothing here is on a deadline at
+    /// startup, so paying it then costs nobody anything.
+    ///
+    /// Best effort by design: if libVLC cannot be built now it will be retried
+    /// on the fire path, which already handles the failure and explains it.
+    /// </summary>
+    public static void Prewarm()
+    {
+        Task.Run(() =>
+        {
+            try
+            {
+                var sw = System.Diagnostics.Stopwatch.StartNew();
+                Vlc();
+                if (Trace) Log($"prewarmed libvlc in {sw.ElapsedMilliseconds}ms");
+            }
+            catch (Exception ex)
+            {
+                Log($"libvlc prewarm failed, will retry on first scare: {ex.Message}");
+            }
+        });
+
+        // Avalonia's FIRST window costs about 150ms to build - renderer and
+        // compositor setup, plus JIT of this whole path - and every one after
+        // it about 20ms. With libVLC moved off the critical path that was the
+        // largest remaining chunk of the first scare's delay. Build one and
+        // throw it away, well off-screen so nothing can flash.
+        //
+        // Background priority: the tray icon has to appear first. register:false
+        // keeps its Image out of the list the real scare paints into.
+        Dispatcher.UIThread.Post(() =>
+        {
+            try
+            {
+                var sw = System.Diagnostics.Stopwatch.StartNew();
+                var w = BuildWindow(register: false);
+                w.Width = 1;
+                w.Height = 1;
+                w.Position = new PixelPoint(-32000, -32000);
+                w.Show();
+                w.Close();
+                if (Trace) Log($"prewarmed window in {sw.ElapsedMilliseconds}ms");
+            }
+            catch (Exception ex)
+            {
+                Log($"window prewarm failed, harmless: {ex.Message}");
+            }
+        }, DispatcherPriority.Background);
+    }
+
     private static LibVLC Vlc()
+    {
+        lock (_vlcGate)
+        {
+            return VlcLocked();
+        }
+    }
+
+    private static LibVLC VlcLocked()
     {
         if (_libvlc is null)
         {
@@ -108,12 +190,15 @@ public static class OverlayWindow
     /// by tools/lib/ffmpeg-args.mjs <c>buildMatteArgs</c>. False for the plain
     /// opaque cut, which composites over black exactly as it always did.
     /// </param>
-    public static void ShowAll(string? videoPath, int failsafeMarginMs, bool sideBySideMatte = false)
+    public static void ShowAll(
+        string? videoPath, int failsafeMarginMs, bool sideBySideMatte = false, int holdMs = 600)
     {
         Close(); // never stack overlays
         _tearing = false;
         _marginMs = failsafeMarginMs;
+        _holdMs = holdMs;
         _matte = sideBySideMatte;
+        _since.Restart();
 
         // Build the first window up front; on non-Windows it also carries the
         // Screens enumeration.
@@ -159,11 +244,14 @@ public static class OverlayWindow
         try
         {
             var vlc = Vlc();
+            if (Trace) Log($"t+{_since.ElapsedMilliseconds}ms libvlc ready");
+
             var media = new Media(vlc, videoPath, FromType.FromPath);
 
             // Parse for the real dimensions rather than assuming; fall back to
             // 720p if the parse turns up nothing.
             await media.Parse(MediaParseOptions.ParseLocal);
+            if (Trace) Log($"t+{_since.ElapsedMilliseconds}ms parsed");
             var track = media.Tracks.FirstOrDefault(t => t.TrackType == TrackType.Video);
             _width = (int)(track.Data.Video.Width == 0 ? 1280 : track.Data.Video.Width);
             _height = (int)(track.Data.Video.Height == 0 ? 720 : track.Data.Video.Height);
@@ -208,20 +296,43 @@ public static class OverlayWindow
                     Log($"playing; audioTracks={player.AudioTrackCount} vol={player.Volume} mute={player.Mute}");
             };
 
-            // Hold past the end so the audio buffer drains and the scare gets a
-            // beat. Closing the instant the video decodes (a sub-second clip)
-            // cut the audio before it reached the speakers - the "no sound" bug.
+            // Hold the PLAYER past the end so the audio buffer drains: closing
+            // the instant a sub-second clip decodes cut the scream before it
+            // reached the speakers - the "no sound" bug.
+            //
+            // Hold the PICTURE for none of it. The margin used to leave the last
+            // decoded frame frozen on screen for its whole duration, which was
+            // two thirds of the scare: 0.77s of lunge followed by 1.5s of Foxy
+            // hanging there, measured. He should land and be gone. Hiding the
+            // image ends the visual on the last frame while the player, and so
+            // the audio, keeps running underneath.
             player.EndReached += (_, _) => Dispatcher.UIThread.Post(() =>
-                DispatcherTimer.RunOnce(Close, TimeSpan.FromMilliseconds(Math.Max(300, _marginMs))));
+            {
+                // Never outlast the close, which frees the buffer this is
+                // drawing from.
+                var hold = Math.Clamp(_holdMs, 0, Math.Max(300, _marginMs));
+
+                void HidePicture()
+                {
+                    foreach (var image in _images) image.IsVisible = false;
+                    if (Trace) Log($"t+{_since.ElapsedMilliseconds}ms picture hidden");
+                }
+
+                if (hold <= 0) HidePicture();
+                else DispatcherTimer.RunOnce(HidePicture, TimeSpan.FromMilliseconds(hold));
+
+                DispatcherTimer.RunOnce(Close, TimeSpan.FromMilliseconds(Math.Max(300, _marginMs)));
+            });
             if (Trace)
             {
-                player.EndReached += (_, _) => Log("end reached");
+                player.EndReached += (_, _) => Log($"t+{_since.ElapsedMilliseconds}ms end reached");
                 player.EncounteredError += (_, _) => Log("libvlc error");
             }
 
             _media = media;
             _player = player;
             player.Play(media);
+            if (Trace) Log($"t+{_since.ElapsedMilliseconds}ms play() returned");
         }
         catch (Exception ex)
         {
@@ -296,13 +407,19 @@ public static class OverlayWindow
             }
 
             foreach (var image in _images) image.InvalidateVisual();
+            if (Trace && _frames == 0) Log($"t+{_since.ElapsedMilliseconds}ms FIRST FRAME on screen");
             _frames++;
         }, DispatcherPriority.Render);
     }
 
     // --- windows -------------------------------------------------------------
 
-    private static Window BuildWindow()
+    /// <param name="register">
+    /// False only for the throwaway window <see cref="Prewarm"/> builds. Its
+    /// Image must not join <see cref="_images"/>, or the next real scare would
+    /// try to paint frames into a window that no longer exists.
+    /// </param>
+    private static Window BuildWindow(bool register = true)
     {
         var image = new Image
         {
@@ -310,7 +427,7 @@ public static class OverlayWindow
             HorizontalAlignment = HorizontalAlignment.Stretch,
             VerticalAlignment = VerticalAlignment.Stretch,
         };
-        _images.Add(image);
+        if (register) _images.Add(image);
 
         return new Window
         {
@@ -421,7 +538,8 @@ public static class OverlayWindow
     public static void Close()
     {
         if (Trace && _windows.Count > 0)
-            Log($"closing: {_frames} frames rendered across {_windows.Count} monitor(s)");
+            Log($"t+{_since.ElapsedMilliseconds}ms closing: {_frames} frames rendered " +
+                $"across {_windows.Count} monitor(s)");
         _tearing = true;
         _frames = 0;
 
