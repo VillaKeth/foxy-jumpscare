@@ -93,7 +93,15 @@ public static class OverlayWindow
     /// </summary>
     public static void Prewarm()
     {
-        Task.Run(() =>
+        // Gates the libVLC half only. Measured: holding its plugins from
+        // startup costs ~45MB working set / ~33MB private and 4 threads, for
+        // the whole idle period, to save ~185ms on the first scare of the
+        // session. The window prewarm below is not gated - it costs no
+        // measurable memory and saves a comparable amount of time.
+        var skipVideo = Environment.GetEnvironmentVariable("FOXY_NO_PREWARM") == "1";
+        if (skipVideo && Trace) Log("libvlc prewarm disabled by FOXY_NO_PREWARM");
+
+        if (!skipVideo) Task.Run(() =>
         {
             try
             {
