@@ -52,12 +52,19 @@ if ($LASTEXITCODE -ne 0) { throw "publish failed" }
 
 # Copy the assets explicitly: the app loads both from disk beside the binary at
 # runtime, and MSBuild drops an ApplicationIcon file from single-file output.
-foreach ($asset in 'foxy.mp4', 'foxy.ico') {
+foreach ($asset in 'foxy.mp4', 'foxy-alpha.mp4', 'foxy.ico') {
   $srcAsset = "$repo\assets\$asset"
   if (Test-Path $srcAsset) { Copy-Item $srcAsset $publishDir -Force }
 }
 if (-not (Test-Path "$publishDir\foxy.mp4")) {
   throw "foxy.mp4 is missing. Run 'npm run assets' first."
+}
+# The transparent cut is what the overlay actually plays; without it the app
+# silently falls back to compositing over black, which is the bug this build
+# exists to fix. Ship foxy.mp4 as well, so deleting one file is a working
+# escape hatch if a recipient's VLC cannot decode 4:4:4.
+if (-not (Test-Path "$publishDir\foxy-alpha.mp4")) {
+  throw "foxy-alpha.mp4 is missing. Run 'npm run assets' first."
 }
 
 $install = @"
@@ -132,6 +139,17 @@ LINUX NOTES
     "Run at startup".
   - Idle detection uses X11. On Wayland it cannot tell whether you are at the
     keyboard, so the countdown keeps running while you are away.
+  - Foxy is composited OVER your screen, not onto a black background. That needs
+    a compositing desktop, which GNOME, KDE and anything on Wayland all are. On
+    a bare X11 session with no compositor the fox still appears, just on black -
+    nothing breaks, it only looks less good.
+  - While he is on screen (about a second and a half) clicks land on the overlay
+    rather than on what is underneath. Windows passes them through; the same
+    trick is not wired up here yet.
+  - If the scare plays sound but shows nothing, your VLC could not decode the
+    4:4:4 video. Delete foxy-alpha.mp4 from the app folder
+    (~/.local/share/FoxyJumpscare) and it falls back to foxy.mp4 automatically -
+    black background, but working.
 
 Settings live in ~/.config/FoxyJumpscare. Autostart, once on, is
 ~/.config/autostart/foxyjumpscare.desktop.
@@ -152,7 +170,8 @@ foreach ($sh in 'install.sh', 'uninstall.sh') {
   [System.IO.File]::WriteAllText("$publishDir\$sh", $shLf)
 }
 
-$ship = @('FoxyJumpscare', 'foxy.mp4', 'foxy.ico', 'INSTALL.txt', 'install.sh', 'uninstall.sh')
+$ship = @('FoxyJumpscare', 'foxy.mp4', 'foxy-alpha.mp4', 'foxy.ico',
+          'INSTALL.txt', 'install.sh', 'uninstall.sh')
 foreach ($f in $ship) {
   if (-not (Test-Path (Join-Path $publishDir $f))) { throw "missing from publish output: $f" }
 }

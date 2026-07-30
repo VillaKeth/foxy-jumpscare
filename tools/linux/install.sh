@@ -32,6 +32,9 @@ echo "Installing Foxy Jumpscare..."
 mkdir -p "$DEST"
 cp -f "$SRC/$APP" "$DEST/"
 cp -f "$SRC/foxy.mp4" "$DEST/"
+# The transparent cut. Optional on purpose: delete it and the app falls back to
+# foxy.mp4, which composites over black.
+if [ -f "$SRC/foxy-alpha.mp4" ]; then cp -f "$SRC/foxy-alpha.mp4" "$DEST/"; fi
 if [ -f "$SRC/foxy.ico" ]; then cp -f "$SRC/foxy.ico" "$DEST/"; fi
 chmod +x "$BIN"
 
