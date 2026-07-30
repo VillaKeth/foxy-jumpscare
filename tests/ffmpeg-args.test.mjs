@@ -4,6 +4,7 @@ import {
   chromakeyFilter,
   buildAlphaArgs,
   buildOpaqueArgs,
+  buildMatteArgs,
 } from '../tools/lib/ffmpeg-args.mjs';
 
 const KEY = { key: '0x00FF00', similarity: 0.18, blend: 0.05 };
@@ -13,6 +14,47 @@ describe('chromakeyFilter', () => {
     expect(chromakeyFilter(KEY)).toBe(
       'chromakey=0x00FF00:0.18:0.05,despill=type=green'
     );
+  });
+});
+
+describe('buildMatteArgs', () => {
+  const args = buildMatteArgs({ src: 'in.mp4', out: 'out.mp4', chromakey: KEY });
+  const filter = args[args.indexOf('-filter_complex') + 1];
+
+  it('stacks the keyed colour beside its extracted alpha', () => {
+    expect(filter).toContain('alphaextract');
+    expect(filter).toContain('hstack=inputs=2');
+  });
+
+  it('flattens the colour half without a synthetic background', () => {
+    // The regression this exists for: `color=` synthesises its own timeline at
+    // 25 fps and overlay adopts it, so that branch gets resampled while the
+    // alphaextract branch keeps the source rate. hstack then pairs the matte of
+    // one frame with the colour of another, which renders as blocks of unkeyed
+    // black around fast-moving limbs. premultiply adds no second input.
+    expect(filter).toContain('premultiply=inplace=1');
+    expect(filter).not.toContain('color=');
+    expect(filter).not.toContain('overlay=');
+  });
+
+  it('encodes 4:4:4, which VP9 only allows in profile 1', () => {
+    // At 4:2:0 the half-resolution chroma planes bleed across the seam between
+    // the two halves and fringe the matte edge.
+    expect(args[args.indexOf('-pix_fmt') + 1]).toBe('yuv444p');
+    expect(args[args.indexOf('-profile:v') + 1]).toBe('1');
+  });
+
+  it('encodes at a higher quality than the opaque cut', () => {
+    // Quantisation noise in the matte is a visible halo, not just soft pixels.
+    const matteCrf = Number(args[args.indexOf('-crf') + 1]);
+    const opaque = buildOpaqueArgs({
+      src: 'in.mp4', out: 'o.mp4', chromakey: KEY, width: 1280, height: 720,
+    });
+    expect(matteCrf).toBeLessThan(Number(opaque[opaque.indexOf('-crf') + 1]));
+  });
+
+  it('puts the output path last', () => {
+    expect(args.at(-1)).toBe('out.mp4');
   });
 });
 

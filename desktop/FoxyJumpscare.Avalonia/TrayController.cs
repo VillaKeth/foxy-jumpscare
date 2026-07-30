@@ -231,6 +231,18 @@ public sealed class TrayController : IDisposable
     /// </summary>
     private bool ShowOverlay()
     {
+        // Prefer the [colour | alpha] cut, which lets the overlay be transparent
+        // so Foxy lunges over the actual desktop. The opaque cut is the fallback
+        // for an asset pack built before that existed; it still plays, just over
+        // black. Both are optional - a bare checkout has neither and the overlay
+        // shows nothing rather than crashing.
+        var matte = System.IO.Path.Combine(AppContext.BaseDirectory, "foxy-alpha.mp4");
+        if (System.IO.File.Exists(matte))
+        {
+            OverlayWindow.ShowAll(matte, _config.FailsafeMarginMs, sideBySideMatte: true);
+            return true;
+        }
+
         var video = System.IO.Path.Combine(AppContext.BaseDirectory, "foxy.mp4");
         OverlayWindow.ShowAll(System.IO.File.Exists(video) ? video : null, _config.FailsafeMarginMs);
         return true;

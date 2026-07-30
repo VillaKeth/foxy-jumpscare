@@ -54,9 +54,41 @@ internal static class WinDisplays
     [DllImport("user32.dll")]
     private static extern bool GetWindowRect(IntPtr hWnd, out RECT rect);
 
+    [DllImport("user32.dll", SetLastError = true, EntryPoint = "GetWindowLongW")]
+    private static extern int GetWindowLong(IntPtr hWnd, int index);
+
+    [DllImport("user32.dll", SetLastError = true, EntryPoint = "SetWindowLongW")]
+    private static extern int SetWindowLong(IntPtr hWnd, int index, int value);
+
     private static readonly IntPtr HWND_TOPMOST = new(-1);
     private const uint SWP_NOACTIVATE = 0x0010;
     private const uint SWP_SHOWWINDOW = 0x0040;
+
+    private const int GWL_EXSTYLE = -20;
+    private const int WS_EX_TRANSPARENT = 0x00000020;
+    private const int WS_EX_NOACTIVATE = 0x08000000;
+
+    /// <summary>
+    /// Make the overlay ignore the mouse entirely, so clicks land on whatever is
+    /// underneath it.
+    ///
+    /// This only became necessary when the overlay stopped being opaque. A black
+    /// fullscreen window swallowing input for two seconds is invisible as a bug -
+    /// there was nothing to click anyway. A window you can SEE THROUGH that still
+    /// eats your clicks reads as the machine locking up.
+    ///
+    /// WS_EX_TRANSPARENT alone does it: hit-testing falls through to the window
+    /// below. WS_EX_LAYERED is deliberately NOT set - Avalonia composites the
+    /// per-pixel alpha itself, and forcing the legacy layered path on top of that
+    /// fights its renderer. WS_EX_NOACTIVATE keeps the scare from stealing
+    /// keyboard focus out of whatever the user was typing in.
+    /// </summary>
+    public static bool ClickThrough(IntPtr hwnd)
+    {
+        if (hwnd == IntPtr.Zero) return false;
+        var style = GetWindowLong(hwnd, GWL_EXSTYLE);
+        return SetWindowLong(hwnd, GWL_EXSTYLE, style | WS_EX_TRANSPARENT | WS_EX_NOACTIVATE) != 0;
+    }
 
     /// <summary>
     /// Make a window cover exactly this physical-pixel rectangle.

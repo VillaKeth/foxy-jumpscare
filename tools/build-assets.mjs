@@ -2,9 +2,11 @@
 import { readFile, access } from 'node:fs/promises';
 import { join, dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { buildAlphaArgs, buildOpaqueArgs, DEFAULT_CHROMAKEY } from './lib/ffmpeg-args.mjs';
+import {
+  buildAlphaArgs, buildOpaqueArgs, buildMatteArgs, DEFAULT_CHROMAKEY,
+} from './lib/ffmpeg-args.mjs';
 import { run } from './lib/run.mjs';
-import { probe, carriesAlpha } from './lib/probe.mjs';
+import { probe, carriesAlpha, countFrames } from './lib/probe.mjs';
 
 const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const REQUIRED_PACK_FIELDS = ['source', 'web', 'desktop'];
@@ -73,9 +75,13 @@ export async function buildAssets({ assetsDir, overrides = {} } = {}) {
   const { width, height } = await probe(src);
   const webm = join(dir, pack.web);
   const mp4 = join(dir, pack.desktop);
+  // Optional so a pack written before the transparent desktop overlay still
+  // loads; the desktop apps fall back to the opaque cut when it is absent.
+  const matte = join(dir, pack.desktopAlpha ?? 'foxy-alpha.mp4');
 
   await run('ffmpeg', buildAlphaArgs({ src, out: webm, chromakey }));
   await run('ffmpeg', buildOpaqueArgs({ src, out: mp4, chromakey, width, height }));
+  await run('ffmpeg', buildMatteArgs({ src, out: matte, chromakey }));
 
   // The alpha channel is the one thing that fails silently, so verify it
   // rather than trusting the encoder.
@@ -87,7 +93,34 @@ export async function buildAssets({ assetsDir, overrides = {} } = {}) {
     );
   }
 
-  return { webm, mp4 };
+  // Same reasoning for the side-by-side cut: a filtergraph that quietly drops
+  // the matte still produces a playable video, and the failure only shows up as
+  // a black rectangle on the user's desktop. Check the geometry instead.
+  const matteInfo = await probe(matte);
+  if (matteInfo.width !== width * 2 || matteInfo.height !== height) {
+    throw new Error(
+      `${matte} is ${matteInfo.width}x${matteInfo.height}, expected ` +
+      `${width * 2}x${height} (colour | matte side by side). The hstack in ` +
+      `buildMatteArgs did not produce both halves.`
+    );
+  }
+
+  // The halves must be the SAME MOMENT, and the only way that fails silently is
+  // one branch of the filtergraph getting resampled to a different frame rate.
+  // The result still plays; it just punches one frame's silhouette out of
+  // another frame's picture, which looks like blocks of unkeyed black around
+  // fast-moving limbs. Frame count is the cheapest proof no resampling
+  // happened - see the note in buildMatteArgs.
+  const [srcFrames, matteFrames] = await Promise.all([countFrames(src), countFrames(matte)]);
+  if (srcFrames !== matteFrames) {
+    throw new Error(
+      `${matte} has ${matteFrames} frames but the source has ${srcFrames}. ` +
+      `Something in the filtergraph resampled one branch, so the colour and ` +
+      `matte halves are no longer the same frame.`
+    );
+  }
+
+  return { webm, mp4, matte };
 }
 
 const isMain = process.argv[1] &&
@@ -96,9 +129,10 @@ const isMain = process.argv[1] &&
 if (isMain) {
   try {
     const overrides = parseArgs(process.argv.slice(2));
-    const { webm, mp4 } = await buildAssets({ overrides });
-    console.log(`  web     ${webm}`);
-    console.log(`  desktop ${mp4}`);
+    const { webm, mp4, matte } = await buildAssets({ overrides });
+    console.log(`  web           ${webm}`);
+    console.log(`  desktop       ${mp4}`);
+    console.log(`  desktop alpha ${matte}`);
   } catch (err) {
     console.error(`\nAsset build failed:\n${err.message}\n`);
     process.exit(1);

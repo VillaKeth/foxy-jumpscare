@@ -14,12 +14,13 @@ build step below.
 |---|---|---|
 | `foxy-src.mp4` | no | **Source.** The raw greenscreen clip, as downloaded. Never consumed directly by either app. |
 | `foxy.webm` | no | *Derived.* VP9 + alpha, Opus audio. Extension only. |
-| `foxy.mp4` | no | *Derived.* VP9 keyed over black, AAC audio, in an MP4 container. Desktop only. |
+| `foxy.mp4` | no | *Derived.* VP9 keyed over black, AAC audio, in an MP4 container. Desktop fallback. |
+| `foxy-alpha.mp4` | no | *Derived.* Double-width: keyed colour on the left, alpha matte on the right. What the desktop overlay actually plays. |
 | `foxy-icon.png` | no | **Source.** A still render, transparent background. Feeds both icon builds. |
 | `foxy.ico` | no | *Derived.* Desktop tray icon, cropped to the head from a source still. |
 | `pack.json` | yes | Manifest. |
 
-Two derived formats because the targets genuinely differ:
+Three derived formats because the targets genuinely differ:
 
 - **Extension → `foxy.webm`.** MP4/H.264 cannot carry an alpha channel at all, and the
   extension overlay is transparent over the live page — Foxy lunges over whatever you
@@ -27,8 +28,19 @@ Two derived formats because the targets genuinely differ:
   backdrop; 0.1.4 took it back out. Verified transparent in Gecko, not just Chromium.)
   WebM/VP9 is also the safer codec bet in Firefox, whose H.264 support depends on OS
   decoders while VP9 is always available in-browser.
-- **Desktop → `foxy.mp4`.** The desktop overlay is fullscreen black, so alpha buys
-  nothing — but the codec still matters. The file is **VP9 in an MP4 container**, not
+- **Desktop → `foxy-alpha.mp4`.** The desktop overlay is transparent too, for the same
+  reason the extension's is: Foxy should lunge over the desktop you were looking at, not
+  over a black rectangle. Getting alpha there is awkward, because nothing in the desktop
+  stack decodes it — WebM alpha rides in a per-block container extension that libavcodec
+  does not surface, so libVLC cannot see it either (`ffmpeg -vf alphaextract` on
+  `foxy.webm` fails outright), and every codec that *does* carry alpha gives up the VP9
+  portability guarantee below. So the matte is packed **into the picture**: one
+  double-width frame, keyed colour on the left, alpha as greyscale on the right, which
+  the overlay reassembles into BGRA as it blits. No alpha support required from anything.
+  Encoded 4:4:4 (VP9 profile 1) so the halves do not bleed across the seam.
+- **Desktop fallback → `foxy.mp4`.** What the overlay plays if a pack has no matte cut;
+  it then composites over black, exactly as every build before this did. The codec
+  reasoning applies to both files. Each is **VP9 in an MP4 container**, not
   H.264: H.264 is patent-encumbered, and Fedora and Arch ship VLC without its decoder,
   so an H.264 desktop scare is a silent black screen on those distros. VP9's decoder is
   royalty-free and ships in the base VLC everywhere, so the Avalonia app (libVLC) plays
@@ -114,9 +126,14 @@ a canvas, and read the pixels. Against the synthetic test clip this returns
   "source": "foxy-src.mp4",
   "web": "foxy.webm",
   "desktop": "foxy.mp4",
+  "desktopAlpha": "foxy-alpha.mp4",
   "chromakey": { "key": "0x00FF00", "similarity": 0.18, "blend": 0.05 }
 }
 ```
+
+`desktopAlpha` is optional and defaults to `foxy-alpha.mp4`, so a pack written
+before the transparent desktop overlay still loads. Omit the *file* and the
+desktop apps fall back to the opaque `desktop` cut.
 
 Playback length comes from the video itself, not from config. The keying values live
 here so a rebuild reproduces the tuned result rather than the defaults.

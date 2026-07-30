@@ -3,7 +3,7 @@ import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { parseArgs, loadPack, buildAssets } from '../tools/build-assets.mjs';
-import { probe, carriesAlpha } from '../tools/lib/probe.mjs';
+import { probe, carriesAlpha, countFrames } from '../tools/lib/probe.mjs';
 import { makeGreenscreen } from './helpers/synthetic.mjs';
 
 const PACK = {
@@ -76,12 +76,49 @@ describe('buildAssets', () => {
     expect((await probe(mp4)).durationSec).toBeCloseTo(src.durationSec, 0);
   }, 120_000);
 
+  it('emits the side-by-side matte cut at double width', async () => {
+    const { matte } = await buildAssets({ assetsDir: dir });
+    const info = await probe(matte);
+    expect(info.width).toBe(640); // [colour | alpha]
+    expect(info.height).toBe(240);
+  }, 120_000);
+
   it('reports a clear error when the source is missing', async () => {
     const empty = await mkdtemp(join(tmpdir(), 'foxy-empty-'));
     await writeFile(join(empty, 'pack.json'), JSON.stringify(PACK, null, 2));
     await expect(buildAssets({ assetsDir: empty })).rejects.toThrow(/src\.mp4/);
     await rm(empty, { recursive: true, force: true });
   });
+});
+
+describe('buildAssets, matte cut, from a source that is not 25 fps', () => {
+  // The bug this guards: the colour half was flattened by overlaying onto a
+  // `color=` source, which synthesises its own 25 fps timeline. hstack then
+  // paired a matte frame with a DIFFERENT colour frame, and the overlay drew
+  // blocks of unkeyed black around anything moving quickly. A 25 fps fixture
+  // cannot see it, because both branches agree by accident.
+  let dir;
+
+  beforeAll(async () => {
+    dir = await mkdtemp(join(tmpdir(), 'foxy-matte-'));
+    await writeFile(join(dir, 'pack.json'), JSON.stringify(PACK, null, 2));
+    await makeGreenscreen(join(dir, 'src.mp4'), {
+      seconds: 1, width: 320, height: 240, fps: 30,
+    });
+  }, 120_000);
+
+  afterAll(async () => {
+    await rm(dir, { recursive: true, force: true });
+  });
+
+  it('keeps the two halves frame-locked to the source', async () => {
+    const { matte } = await buildAssets({ assetsDir: dir });
+    const [src, out] = await Promise.all([
+      countFrames(join(dir, 'src.mp4')),
+      countFrames(matte),
+    ]);
+    expect(out).toBe(src);
+  }, 120_000);
 });
 
 describe('loadPack', () => {

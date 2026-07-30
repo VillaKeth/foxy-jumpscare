@@ -32,7 +32,80 @@ export function buildAlphaArgs({ src, out, chromakey, bitrate = '2M' }) {
 }
 
 /**
+ * Desktop target, transparent: the keyed frames and their alpha matte encoded
+ * SIDE BY SIDE in one ordinary video, colour on the left, matte on the right.
+ * The player reassembles them into BGRA at blit time.
+ *
+ * Why not just hand the desktop the alpha WebM the extension already uses:
+ * nothing in the desktop stack can decode it. WebM alpha lives in a per-block
+ * container extension, and libavcodec - which is what libVLC decodes with -
+ * does not surface that plane. `ffmpeg -vf alphaextract` on foxy.webm fails
+ * with "Requested planes not available", and VLC inherits exactly that. Every
+ * other alpha-capable codec (qtrle, ProRes 4444, FFV1) trades the royalty-free
+ * VP9 guarantee that buildOpaqueArgs documents at length. Packing the matte
+ * into the picture needs no alpha support from anything, so it cannot regress
+ * on a distro that ships a reduced codec set.
+ *
+ * One video also means one decoder, which is what keeps every monitor in
+ * lock-step and the scream playing once - see OverlayWindow.
+ *
+ * The colour half is flattened over black, which is precisely premultiplied
+ * alpha, so the blit needs no divide and dark edge pixels do not halo.
+ *
+ * 4:4:4 (hence VP9 profile 1) is not optional. At 4:2:0 the chroma planes are
+ * half resolution, so the two halves bleed into each other across the seam and
+ * the matte edge softens into a fringe. The luma plane carries the matte at
+ * full resolution either way; the seam is the problem.
+ *
+ * Note what flattens the colour half: `premultiply=inplace=1`, NOT an overlay
+ * onto a `color=c=black` source the way buildOpaqueArgs does it. That matters
+ * for correctness, not tidiness. `color` synthesises its own timeline at its
+ * own default rate - 25 fps - and `overlay` adopts it, so that branch gets
+ * resampled while the alphaextract branch stays at the source's 29.97. hstack
+ * then lines up two different timelines and the halves stop being the same
+ * moment: the matte from one frame punches out the colour of another, which
+ * renders as blocks of unkeyed black around anything moving fast. Multiplying
+ * in place introduces no second input, so both halves stay frame-locked to the
+ * source. Do not reintroduce a synthetic background here.
+ */
+export function buildMatteArgs({ src, out, chromakey, crf = 18 }) {
+  const filter = [
+    `[0:v]${chromakeyFilter(chromakey)},split=2[k1][k2]`,
+    `[k1]premultiply=inplace=1,format=gbrp[colour]`,
+    `[k2]alphaextract,format=gbrp[matte]`,
+    `[colour][matte]hstack=inputs=2,format=yuv444p[v]`,
+  ].join(';');
+
+  return [
+    '-y',
+    '-i', src,
+    '-filter_complex', filter,
+    '-map', '[v]',
+    '-map', '0:a?',
+    '-c:v', 'libvpx-vp9',
+    // 4:4:4 is only legal in VP9 profile 1; libvpx will not infer it.
+    '-profile:v', '1',
+    '-pix_fmt', 'yuv444p',
+    '-b:v', '0',
+    // Tighter than the opaque build's 30. Quantisation noise in the colour half
+    // is a jumpscare nobody inspects; the same noise in the MATTE is a visible
+    // halo around a character composited onto the user's actual desktop.
+    '-crf', String(crf),
+    '-row-mt', '1',
+    '-deadline', 'good',
+    '-cpu-used', '2',
+    '-c:a', 'aac',
+    '-b:a', '192k',
+    out,
+  ];
+}
+
+/**
  * Desktop target: keyed foreground flattened over black, VP9 in MP4.
+ *
+ * Superseded as the default by buildMatteArgs, which lets the overlay be
+ * transparent. Still built, and still the fallback both desktop apps load when
+ * the matte cut is absent from the pack.
  *
  * VP9, not H.264, and the reason is portability, not preference. H.264 is
  * patent-encumbered, so Fedora and Arch/EndeavourOS ship their VLC WITHOUT its
@@ -47,6 +120,11 @@ export function buildAlphaArgs({ src, out, chromakey, bitrate = '2M' }) {
  * so the desktop apps load the same "foxy.mp4" path unchanged. Audio stays AAC:
  * its free decoder (faad) is also default across distros, so the scream plays
  * where the picture does.
+ *
+ * Known wart, pre-dating the matte cut: the `color` source runs at 25 fps and
+ * overlay adopts it, so a 29.97 fps source is resampled 26 frames -> 21 here.
+ * Harmless for an opaque fallback; fatal for a matte, which is why
+ * buildMatteArgs flattens a different way.
  */
 export function buildOpaqueArgs({ src, out, chromakey, width, height, crf = 30 }) {
   const filter = [

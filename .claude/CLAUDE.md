@@ -34,13 +34,25 @@ GitHub, page autoplay policy silently kills content-script audio, and host CSS l
 into injected nodes. Do not "simplify" it back to a raw `<video>` node.
 
 **The source greenscreen video is never consumed directly.** `tools/build-assets.mjs`
-keys it into `foxy.webm` (VP9+alpha, extension) and `foxy.mp4` (VP9 over black,
-desktop). Both are VP9 on purpose: H.264 is patent-encumbered, so Fedora and Arch
-ship VLC without its decoder and the desktop scare is a silent black screen there —
-VP9's decoder is royalty-free and always present. The alpha (WebM) pass must pass
-`-auto-alt-ref 0` or the alpha channel is destroyed. On Windows the WPF build decodes
-`foxy.mp4` via Media Foundation, which needs the (inbox on Win11) VP9 extension; the
-Avalonia build carries its own libVLC and never depends on an OS codec.
+keys it into `foxy.webm` (VP9+alpha, extension), `foxy-alpha.mp4` (double-width
+colour|matte, desktop) and `foxy.mp4` (VP9 over black, desktop fallback). All VP9 on
+purpose: H.264 is patent-encumbered, so Fedora and Arch ship VLC without its decoder
+and the desktop scare is a silent black screen there — VP9's decoder is royalty-free
+and always present. The alpha (WebM) pass must pass `-auto-alt-ref 0` or the alpha
+channel is destroyed. On Windows the WPF build decodes `foxy.mp4` via Media
+Foundation, which needs the (inbox on Win11) VP9 extension; the Avalonia build
+carries its own libVLC and never depends on an OS codec.
+
+**Neither overlay paints a backdrop.** Browser and desktop both composite Foxy over
+whatever was already on screen; an opaque backdrop turns the scare into a video
+player. The one exception is the extension's standalone fallback window, which has
+no page behind it — `overlay.js` paints that black when `window.parent === window`.
+The desktop gets its alpha from `foxy-alpha.mp4`'s right half, not from any codec
+feature: nothing in the libVLC stack can decode WebM alpha. When building that file,
+do not flatten the colour half by overlaying onto a `color=` source — it synthesises
+a 25 fps timeline, the matte branch keeps the source rate, and the two halves stop
+being the same frame. `buildMatteArgs` uses `premultiply=inplace=1` for that reason,
+and the build asserts frame parity with the source.
 
 ## Toolchain
 

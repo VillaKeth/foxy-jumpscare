@@ -19,6 +19,23 @@ export function carriesAlpha(info) {
   return hasAlpha(info.pixFmt) || info.alphaMode;
 }
 
+/**
+ * Exact decoded frame count. Slower than reading nb_frames because it walks the
+ * file, but nb_frames is a container hint and is absent or wrong often enough
+ * that it cannot be used to prove a filtergraph did not resample.
+ */
+export async function countFrames(file) {
+  const stdout = await runCapture('ffprobe', [
+    '-v', 'error',
+    '-select_streams', 'v:0',
+    '-count_frames',
+    '-show_entries', 'stream=nb_read_frames',
+    '-of', 'json',
+    file,
+  ]);
+  return Number(JSON.parse(stdout).streams?.[0]?.nb_read_frames ?? 0);
+}
+
 export async function probe(file) {
   const stdout = await runCapture('ffprobe', [
     '-v', 'error',

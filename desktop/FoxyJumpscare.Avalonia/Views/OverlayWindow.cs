@@ -43,6 +43,17 @@ public static class OverlayWindow
     private static WriteableBitmap? _bitmap;
     private static IntPtr _buffer;
     private static int _width, _height, _stride;
+
+    /// <summary>
+    /// Width of one composited frame. Equals <see cref="_width"/> for the opaque
+    /// cut, and half of it for the side-by-side matte cut, where the decoded
+    /// picture is [colour | alpha] and only the left half is the picture.
+    /// </summary>
+    private static int _frameWidth;
+
+    /// <summary>Whether the loaded video carries its alpha as a second half.</summary>
+    private static bool _matte;
+
     private static volatile bool _tearing;
     private static int _frames;
     private static int _marginMs = 1500;
@@ -92,11 +103,17 @@ public static class OverlayWindow
         return _libvlc;
     }
 
-    public static void ShowAll(string? videoPath, int failsafeMarginMs)
+    /// <param name="sideBySideMatte">
+    /// True when <paramref name="videoPath"/> is the [colour | alpha] cut built
+    /// by tools/lib/ffmpeg-args.mjs <c>buildMatteArgs</c>. False for the plain
+    /// opaque cut, which composites over black exactly as it always did.
+    /// </param>
+    public static void ShowAll(string? videoPath, int failsafeMarginMs, bool sideBySideMatte = false)
     {
         Close(); // never stack overlays
         _tearing = false;
         _marginMs = failsafeMarginMs;
+        _matte = sideBySideMatte;
 
         // Build the first window up front; on non-Windows it also carries the
         // Screens enumeration.
@@ -152,12 +169,30 @@ public static class OverlayWindow
             _height = (int)(track.Data.Video.Height == 0 ? 720 : track.Data.Video.Height);
             _stride = _width * 4;
 
+            // An odd width cannot be split down the middle. Rather than blit
+            // half a pixel off, fall back to treating the whole picture as
+            // opaque - a black scare beats a torn one.
+            if (_matte && _width % 2 != 0)
+            {
+                Log($"matte cut is {_width}px wide, not divisible by 2; falling back to opaque");
+                _matte = false;
+            }
+
+            _frameWidth = _matte ? _width / 2 : _width;
+
             _buffer = Marshal.AllocHGlobal(_stride * _height);
             _bitmap = new WriteableBitmap(
-                new PixelSize(_width, _height), new Vector(96, 96),
-                PixelFormat.Bgra8888, AlphaFormat.Opaque);
+                new PixelSize(_frameWidth, _height), new Vector(96, 96),
+                PixelFormat.Bgra8888,
+                // The colour half is flattened over black, which IS premultiplied
+                // alpha - so no divide, and no bright halo around dark edges.
+                _matte ? AlphaFormat.Premul : AlphaFormat.Opaque);
 
             foreach (var image in _images) image.Source = _bitmap;
+
+            if (Trace && _windows.Count > 0)
+                Log($"video {_width}x{_height} -> frame {_frameWidth}x{_height} " +
+                    $"matte={_matte} transparency={_windows[0].ActualTransparencyLevel}");
 
             var player = new MediaPlayer(vlc);
             player.SetVideoFormat("RV32", (uint)_width, (uint)_height, (uint)_stride);
@@ -228,8 +263,36 @@ public static class OverlayWindow
             {
                 var src = (byte*)_buffer;
                 var dst = (byte*)fb.Address;
-                for (var y = 0; y < _height; y++)
-                    Buffer.MemoryCopy(src + y * _stride, dst + y * fb.RowBytes, fb.RowBytes, _stride);
+
+                if (!_matte)
+                {
+                    for (var y = 0; y < _height; y++)
+                        Buffer.MemoryCopy(src + y * _stride, dst + y * fb.RowBytes, fb.RowBytes, _stride);
+                }
+                else
+                {
+                    // Reassemble BGRA from the two halves of the decoded picture:
+                    // colour on the left, alpha matte on the right. The matte is
+                    // grey, so any one of its channels is the alpha - green is
+                    // taken because it is the channel VP9 codes most precisely.
+                    var w = _frameWidth;
+                    for (var y = 0; y < _height; y++)
+                    {
+                        var srow = src + y * _stride;
+                        var drow = dst + y * fb.RowBytes;
+                        var mrow = srow + w * 4;
+
+                        for (var x = 0; x < w; x++)
+                        {
+                            var s = srow + x * 4;
+                            var d = drow + x * 4;
+                            d[0] = s[0];              // B
+                            d[1] = s[1];              // G
+                            d[2] = s[2];              // R
+                            d[3] = (mrow + x * 4)[1]; // A, from the matte's green
+                        }
+                    }
+                }
             }
 
             foreach (var image in _images) image.InvalidateVisual();
@@ -252,7 +315,22 @@ public static class OverlayWindow
         return new Window
         {
             SystemDecorations = SystemDecorations.None,
-            Background = Brushes.Black,
+
+            // Transparent, so Foxy lunges over the desktop you were actually
+            // looking at. This used to be Brushes.Black, which turned the scare
+            // into a video player covering the screen.
+            //
+            // Background and TransparencyLevelHint are both required and do
+            // different jobs: the hint asks the platform for a per-pixel-alpha
+            // window, the brush stops Avalonia painting an opaque fill inside
+            // it. Setting only one leaves the window black.
+            //
+            // If the platform refuses the hint, ActualTransparencyLevel comes
+            // back as None and the frames composite over black - which is
+            // exactly the old behaviour, not a broken one. StartVideo logs it.
+            Background = Brushes.Transparent,
+            TransparencyLevelHint = new[] { WindowTransparencyLevel.Transparent },
+
             Topmost = true,
             ShowInTaskbar = false,
             CanResize = false,
@@ -320,6 +398,10 @@ public static class OverlayWindow
         }
 
         Platform.WinDisplays.Cover(hwnd, bounds);
+
+        // Only meaningful now that the overlay is see-through: a transparent
+        // window that still swallowed clicks would read as a frozen machine.
+        Platform.WinDisplays.ClickThrough(hwnd);
 
         if (Trace)
             Log($"placed monitor {bounds.Width}x{bounds.Height} @({bounds.X},{bounds.Y}) via Win32");

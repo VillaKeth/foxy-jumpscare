@@ -48,6 +48,9 @@
     <!-- Assets from the pack, optional so the app builds before it exists. -->
     <None Include="..\..\assets\foxy.mp4" Condition="Exists('..\..\assets\foxy.mp4')"
           CopyToOutputDirectory="PreserveNewest" Link="foxy.mp4" />
+    <!-- [colour | alpha] side by side; lets the overlay be transparent. -->
+    <None Include="..\..\assets\foxy-alpha.mp4" Condition="Exists('..\..\assets\foxy-alpha.mp4')"
+          CopyToOutputDirectory="PreserveNewest" Link="foxy-alpha.mp4" />
     <None Include="..\..\assets\foxy.ico" Condition="Exists('..\..\assets\foxy.ico')"
           CopyToOutputDirectory="PreserveNewest" Link="foxy.ico" />
   </ItemGroup>
