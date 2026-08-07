@@ -1,6 +1,13 @@
 <!doctype html>
 <meta charset="utf-8">
 <title>foxy</title>
+<!--
+  Must stay HERE: above the stylesheet, no defer, no type="module". It picks
+  the backdrop before first paint, which is the difference between the
+  standalone fallback opening black and opening with a white flash. An inline
+  script would be blocked by MV3's script-src 'self'. See backdrop.js.
+-->
+<script src="backdrop.js"></script>
 <style>
   /*
    * Transparent, and it has to stay that way: the whole effect is Foxy keyed

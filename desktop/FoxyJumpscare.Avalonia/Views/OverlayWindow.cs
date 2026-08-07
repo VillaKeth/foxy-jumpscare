@@ -224,29 +224,48 @@ public static class OverlayWindow
         _matte = sideBySideMatte;
         _since.Restart();
 
-        // Build the first window up front; on non-Windows it also carries the
-        // Screens enumeration.
-        var first = BuildWindow();
-        first.Show();
-        _windows.Add(first);
-
         // Monitor geometry, queried LIVE each fire. On Windows this comes from
         // Win32 directly (WinDisplays) rather than Avalonia's Window.Screens,
         // which caches and can be left stale by a resolution change - Remote
         // Desktop connect/disconnect being the reproducer. A stale cache is why
         // the overlay kept coming up at the smaller remote size, every scare,
         // until the app was restarted.
-        var monitors = OperatingSystem.IsWindows()
-            ? Platform.WinDisplays.Query()
-            : first.Screens.All.Select(s => (Bounds: s.Bounds, Scaling: (double)s.Scaling)).ToList();
+        //
+        // On Windows that query needs no window at all, so it runs BEFORE
+        // anything is shown, and the ordering is load-bearing. Every window
+        // used to be Show()n here and only sized afterwards by Place(), which
+        // cannot run earlier because it drives the HWND and there is no HWND
+        // until the window is shown. The result was measurable: each scare
+        // mapped a window at Avalonia's default 1440x753 @(26,26) for ~31ms
+        // before snapping to fullscreen - a flash in the corner of the primary
+        // monitor in the instant before the scare.
+        //
+        // Other platforms enumerate screens through a TopLevel, so they still
+        // bootstrap one window first; only that one can flash there.
+        List<(PixelRect Bounds, double Scaling)> monitors;
+        if (OperatingSystem.IsWindows())
+        {
+            monitors = Platform.WinDisplays.Query();
+        }
+        else
+        {
+            var bootstrap = BuildWindow();
+            bootstrap.Show();
+            _windows.Add(bootstrap);
+            monitors = bootstrap.Screens.All
+                .Select(s => (Bounds: s.Bounds, Scaling: (double)s.Scaling)).ToList();
+        }
 
         if (monitors.Count == 0)
             monitors = new List<(PixelRect Bounds, double Scaling)> { (new PixelRect(0, 0, 1920, 1080), 1.0) };
 
-        // One overlay window per monitor.
+        // One overlay window per monitor, each given its geometry BEFORE Show
+        // so no window is ever mapped at the default size.
         while (_windows.Count < monitors.Count)
         {
+            var m = monitors[_windows.Count];
             var w = BuildWindow();
+            PreSize(w, m.Bounds, m.Scaling);
             w.Show();
             _windows.Add(w);
         }
@@ -475,8 +494,46 @@ public static class OverlayWindow
             Topmost = true,
             ShowInTaskbar = false,
             CanResize = false,
+
+            // Never take focus, not even for an instant. WS_EX_NOACTIVATE says
+            // the same thing, but it is applied by WinDisplays.ClickThrough
+            // from PlaceWin32 - which needs an HWND, so it cannot run until
+            // after Show(). That left a real gap: the window was mapped
+            // activatable, took the foreground, and only then became
+            // non-activating. Measured at 24 of 40 samples with the overlay in
+            // the foreground, i.e. most of the scare.
+            //
+            // A jumpscare that eats the sentence you were typing is a bug, not
+            // a feature - so this is set at the framework level, before the
+            // window exists, and works on every platform rather than only the
+            // one with the Win32 fixup. The ex-style stays as the belt to this
+            // braces, and is what keeps clicks passing through.
+            ShowActivated = false,
+
             Content = image,
         };
+    }
+
+    /// <summary>
+    /// Give a window its final geometry BEFORE it is shown.
+    ///
+    /// A hint, not the authority - <see cref="Place"/> still runs afterwards
+    /// and still wins. The only job here is that the FIRST mapped frame is
+    /// already the right size in the right place, because Place cannot do it:
+    /// on Windows it drives the HWND with SetWindowPos, and a window has no
+    /// HWND until it is shown. Skipping this put a 1440x753 window at (26,26)
+    /// on screen for ~31ms at the start of every scare.
+    ///
+    /// Bounds are physical pixels; Width/Height are DIPs, hence the divide.
+    /// Manual startup location so Avalonia does not re-centre and undo it.
+    /// </summary>
+    private static void PreSize(Window w, PixelRect bounds, double scaling)
+    {
+        var s = scaling <= 0 ? 1 : scaling;
+        w.WindowStartupLocation = WindowStartupLocation.Manual;
+        w.Position = bounds.Position;
+        w.Width = bounds.Width / s;
+        w.Height = bounds.Height / s;
     }
 
     private static void Place(Window w, PixelRect bounds, double scaling)
