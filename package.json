@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "assets": "node tools/build-assets.mjs",
+    "assets:placeholder": "node tools/make-placeholder.mjs",
     "build": "node tools/make-icons.mjs && node tools/build-extension.mjs",
     "test": "vitest run",
     "test:e2e": "playwright test",

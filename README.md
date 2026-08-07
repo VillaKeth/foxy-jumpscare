@@ -17,9 +17,10 @@ Both are configurable, including a "Terraria faithful" 1-in-10,000 preset.
 
 ## What it does
 
-Foxy lunges at you with the scream, then disappears. In the browser he's **transparent
-over your actual page** — your inbox, your PR, still visible behind him. On the desktop
-he takes the whole screen.
+Foxy lunges at you with the scream, then disappears. He is **transparent over whatever
+you were already looking at** — your inbox, your PR, your desktop, still visible behind
+him. One exception: the older Windows-only WPF desktop build composites over black
+instead. There are two desktop apps; see [Build](#build).
 
 It does not block input, does not steal focus, and does not touch your system volume.
 The desktop version only counts seconds where you are actually at the machine — it will
@@ -33,28 +34,93 @@ install it if that's a problem for you, and think twice about headphones at 2am.
 ```
 assets/       shared asset pack (gitignored — see assets/PACK.md)
 extension/    MV3, builds to both Chrome and Firefox
-desktop/      C# .NET 8 WinForms tray app, Windows only
+desktop/      two tray apps over one shared core:
+  FoxyJumpscare/             WPF, net8.0-windows — opaque black overlay, Windows only
+  FoxyJumpscare.Avalonia/    Avalonia + libVLC, net8.0 — transparent, cross-platform
+  FoxyJumpscare.Core/        roll, ticker, config store, formatter — no UI
+  FoxyJumpscare.Core.Tests/  xunit
 tools/        build scripts
 docs/         design specs
 ```
+
+The two desktop apps share `FoxyJumpscare.Core` unchanged and differ only in shell.
+Avalonia is where the transparency and the non-Windows work live; WPF is older and
+still the most-tested. Neither replaces the other yet —
+[`docs/cross-platform.md`](docs/cross-platform.md) has the per-OS verification matrix
+and the honest gaps.
 
 ## Build
 
 Requires Node 24+, .NET 8 SDK, ffmpeg, git.
 
+### 1. Assets — do this first
+
+Every build expects the derived media, and a fresh clone has nothing to derive it from:
+the FNAF footage is deliberately excluded (see [Assets and licensing](#assets-and-licensing)).
+So start with a source clip, real or fake:
+
 ```powershell
 npm install
 
-# Assets — keys the greenscreen source into the two derived formats
+# If you have the greenscreen clip: put it at assets/foxy-src.mp4, then
 npm run assets
 
-# Extension -> dist/chrome, dist/firefox
-npm run build
-
-# Desktop -> a ~0.2 MB framework-dependent exe
-dotnet publish desktop/FoxyJumpscare -c Release -r win-x64 `
-  --self-contained false -p:PublishSingleFile=true
+# If you don't: generate a stand-in, then build from that
+npm run assets:placeholder
+npm run assets
 ```
+
+`assets:placeholder` writes a crude blocky fox lunging on a pure-green background to
+`assets/foxy-src.mp4`. It looks obviously fake and is meant to — the point is that the
+whole pipeline is exercisable on a fresh checkout. Nothing downstream knows the
+difference; drop the real clip over the top and re-run `npm run assets`.
+
+It will not overwrite an existing `foxy-src.mp4` unless you pass `-- --force`. On a
+populated checkout that file is the real source, it is gitignored, and nothing in the
+repo can restore it.
+
+Either way you get three derived cuts — `foxy.webm` (extension), `foxy-alpha.mp4`
+(transparent desktop) and `foxy.mp4` (desktop fallback). [`assets/PACK.md`](assets/PACK.md)
+explains why each target needs its own.
+
+### 2. Extension
+
+```powershell
+npm run build          # -> dist/chrome, dist/firefox
+npm run package        # -> submittable store zips
+```
+
+### 3. Desktop — pick which one
+
+**Transparent** — Avalonia. Cross-platform, and where current work happens. On Windows
+it bundles its own libVLC and depends on no OS codec.
+
+```powershell
+# run it from source, any OS with the .NET 8 SDK
+dotnet run --project desktop/FoxyJumpscare.Avalonia               # tray
+dotnet run --project desktop/FoxyJumpscare.Avalonia -- --settings
+dotnet run --project desktop/FoxyJumpscare.Avalonia -- --test-scare
+
+# ship it to a Linux friend -> dist/desktop/FoxyJumpscare-linux-x64.tar.gz
+pwsh tools/publish-desktop-linux.ps1
+```
+
+There is no packaging script for Avalonia on Windows or macOS yet — on Windows, run the
+`dotnet build` output directly. Linux recipients need their distro's VLC libraries,
+which the tarball's INSTALL.txt lists per distro; the archive is built through WSL so
+the binary keeps its executable bit.
+
+**Black background** — WPF, Windows only. The overlay is opaque by design, not a stale
+build; the transparency work landed in Avalonia and was never ported back.
+
+```powershell
+# -> dist/desktop/FoxyJumpscare-win-x64-black.zip (~64 MB)
+pwsh tools/publish-desktop.ps1
+```
+
+Self-contained: the recipient double-clicks and it runs, with no .NET install. It
+decodes VP9 through Media Foundation, which is inbox on Windows 11 and a free Store
+extension on Windows 10. The zip carries its own INSTALL.txt.
 
 ## Test
 
@@ -75,8 +141,10 @@ The desktop app's remaining checks are genuinely manual — DPI, focus stealing 
 multi-monitor behaviour are invisible to a headless test. See
 [`docs/desktop-checklist.md`](docs/desktop-checklist.md).
 
-Drop the greenscreen source into `assets/` first, per
-[`assets/PACK.md`](assets/PACK.md) — every build expects the derived files.
+Linux is verified in containers, reproducibly, against a real X server —
+`./docker/run-linux-verify.sh` for Ubuntu 24.04, `all` to add Fedora 41. macOS has never
+been run at all; treat `MacPlatform.cs` as a draft. Both caveats are detailed in
+[`docs/cross-platform.md`](docs/cross-platform.md).
 
 Set `TEST_MODE` to force 1-in-5 odds so it fires in seconds instead of days.
 
@@ -86,6 +154,13 @@ Set `TEST_MODE` to force 1-in-5 odds so it fires in seconds instead of days.
 - The extension needs the `<all_urls>` permission to inject anywhere. It reads nothing
   and sends nothing; it only draws an overlay.
 - Autostart is off by default and opt-in from the tray menu.
+- All video is **VP9**, deliberately. H.264 is patent-encumbered, so Fedora and Arch ship
+  VLC without its decoder and an H.264 scare is a silent black screen there. VP9's
+  decoder is royalty-free and always present.
+- The Avalonia build bundles libVLC on Windows but expects a **system** libVLC on Linux
+  and macOS (`apt install libvlc5 vlc-plugin-base`, `brew install vlc`).
+- `FOXY_MUTE=1` forces a silent audio module and `FOXY_TRACE=1` logs playback state to
+  stderr. Both are for headless verification; nothing shipped sets either.
 
 ## Assets and licensing
 

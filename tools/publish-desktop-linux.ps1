@@ -62,7 +62,7 @@ if (-not (Test-Path "$publishDir\foxy.mp4")) {
 # The transparent cut is what the overlay actually plays; without it the app
 # silently falls back to compositing over black, which is the bug this build
 # exists to fix. Ship foxy.mp4 as well, so deleting one file is a working
-# escape hatch if a recipient's VLC cannot decode 4:4:4.
+# escape hatch if a recipient's VLC cannot decode the double-width cut.
 if (-not (Test-Path "$publishDir\foxy-alpha.mp4")) {
   throw "foxy-alpha.mp4 is missing. Run 'npm run assets' first."
 }
@@ -147,7 +147,7 @@ LINUX NOTES
     rather than on what is underneath. Windows passes them through; the same
     trick is not wired up here yet.
   - If the scare plays sound but shows nothing, your VLC could not decode the
-    4:4:4 video. Delete foxy-alpha.mp4 from the app folder
+    double-width transparent video. Delete foxy-alpha.mp4 from the app folder
     (~/.local/share/FoxyJumpscare) and it falls back to foxy.mp4 automatically -
     black background, but working.
 

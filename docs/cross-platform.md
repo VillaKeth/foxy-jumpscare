@@ -196,8 +196,10 @@ dotnet run --project desktop/FoxyJumpscare.Avalonia -- --settings # open setting
 dotnet run --project desktop/FoxyJumpscare.Avalonia -- --test-scare
 ```
 
-`assets/foxy.mp4` and `assets/foxy.ico` are copied next to the build, same as
-the WPF app.
+`assets/foxy.mp4`, `assets/foxy-alpha.mp4` and `assets/foxy.ico` are copied next to the
+build, each conditional on existing. `foxy-alpha.mp4` is the one the overlay actually
+plays; without it the app silently falls back to `foxy.mp4` and composites over black,
+which looks like a bug and is not one.
 
 ## Architecture
 

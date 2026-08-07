@@ -60,7 +60,9 @@ export async function buildAssets({ assetsDir, overrides = {} } = {}) {
   } catch {
     throw new Error(
       `Source video not found: ${src}\n` +
-      `Drop the greenscreen clip there — see assets/PACK.md.`
+      `Drop the greenscreen clip there — see assets/PACK.md.\n` +
+      `No clip? Run "npm run assets:placeholder" to generate a stand-in and ` +
+      `build the whole pipeline from that.`
     );
   }
 

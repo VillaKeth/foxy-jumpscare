@@ -9,7 +9,12 @@
  *
  * It is obviously a placeholder and is meant to be. Drop the real clip over the
  * top and rebuild - nothing else changes.
+ *
+ * Refuses to clobber an existing foxy-src.mp4 without --force. ffmpeg runs with
+ * -y, so without that check this overwrites the real clip in place, with no
+ * prompt - and the real clip is not in the repo to restore from.
  */
+import { existsSync } from 'node:fs';
 import { join, dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { run } from './lib/run.mjs';
@@ -57,6 +62,14 @@ const face = [
 ].join(',');
 
 const out = join(REPO_ROOT, 'assets', 'foxy-src.mp4');
+
+if (existsSync(out) && !process.argv.includes('--force')) {
+  console.error(`  ${out} already exists - leaving it alone.`);
+  console.error('  That file is the real greenscreen source on a populated checkout,');
+  console.error('  it is gitignored, and nothing here can put it back. Overwrite with:');
+  console.error('    npm run assets:placeholder -- --force');
+  process.exit(1);
+}
 
 await run('ffmpeg', [
   '-y',

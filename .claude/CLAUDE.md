@@ -1,10 +1,16 @@
 # Foxy Jumpscare
 
-Two apps that fire a rare fullscreen jumpscare, ported from the Terraria mod
-"1/10000 Chance for Withered Foxy Jumpscare Every Second" by yonsan (YMY).
+A rare fullscreen jumpscare, ported from the Terraria mod "1/10000 Chance for Withered
+Foxy Jumpscare Every Second" by yonsan (YMY). One browser extension and two desktop
+apps, the latter sharing a single core.
 
 - `extension/` — MV3 browser extension, builds to Chrome + Firefox
-- `desktop/` — C# .NET 8 WinForms tray app, Windows only
+- `desktop/FoxyJumpscare` — WPF + WinForms tray, `net8.0-windows`. Opaque black overlay.
+  Older, most-tested. Ships as `FoxyJumpscare-win-x64-black.zip`.
+- `desktop/FoxyJumpscare.Avalonia` — Avalonia + LibVLCSharp, plain `net8.0`. Transparent
+  overlay, Windows/Linux/macOS. Where current work happens. See `docs/cross-platform.md`.
+- `desktop/FoxyJumpscare.Core` — roll, ticker, config store, formatter. Shared by both,
+  no UI. Tests live in `FoxyJumpscare.Core.Tests`.
 - `assets/` — shared asset pack (**gitignored**, see `assets/PACK.md`)
 - `docs/superpowers/specs/` — design docs; start with the 2026-07-22 one
 
@@ -62,18 +68,30 @@ Node 24 / npm 11, .NET 8 SDK, ffmpeg, git. No pnpm, no rust on this box.
 # single root package.json covers tools + extension — no per-package installs
 npm install
 
-# assets — run first; both builds expect the derived files
+# assets — run first; every build expects the derived files.
+# No assets/foxy-src.mp4 on this checkout? assets:placeholder writes a stand-in so
+# the pipeline is exercisable without copyrighted input.
+npm run assets:placeholder            # only if the source clip is missing
 npm run assets
 
 # extension
 npm run build                         # -> dist/chrome, dist/firefox
 npm test
 
-# desktop
-dotnet build   desktop/FoxyJumpscare
-dotnet test    desktop/FoxyJumpscare.Tests
-dotnet publish desktop/FoxyJumpscare -c Release
+# desktop — the test project is Core.Tests; there is no FoxyJumpscare.Tests
+dotnet test  desktop/FoxyJumpscare.Core.Tests
+
+# desktop, transparent (Avalonia) — the one under active development
+dotnet run   --project desktop/FoxyJumpscare.Avalonia -- --test-scare
+pwsh tools/publish-desktop-linux.ps1  # -> FoxyJumpscare-linux-x64.tar.gz
+
+# desktop, black background (WPF, Windows only)
+pwsh tools/publish-desktop.ps1        # -> FoxyJumpscare-win-x64-black.zip
 ```
+
+Publish through the scripts, not raw `dotnet publish`. They copy the assets the apps
+load from disk at runtime and assert the ones whose absence degrades silently — a
+missing `foxy-alpha.mp4` turns the transparent overlay back into the black one.
 
 `TEST_MODE` forces `oneInN = 5` so the overlay fires in seconds. Use it — otherwise
 you are waiting a week to see your own change.

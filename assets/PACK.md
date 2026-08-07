@@ -8,6 +8,19 @@ keeping them out of the repository means a takedown notice costs a re-upload rat
 than the repo. Reconstitute them locally by dropping in the source and running the
 build step below.
 
+**No source clip? You can still build everything.**
+
+```powershell
+npm run assets:placeholder    # writes a stand-in to assets/foxy-src.mp4
+npm run assets                # then derive as normal
+```
+
+That generates a crude blocky animatronic fox lunging on a pure `0x00FF00` background,
+with a noise burst for audio. It is obviously a placeholder and is meant to be — its job
+is to keep the pipeline exercisable on a fresh checkout, which is otherwise impossible
+without copyrighted input. Nothing downstream treats it specially. Drop the real clip
+over the top and rebuild; that is the only step that changes.
+
 ## Files
 
 | File | Tracked | Notes |
@@ -37,7 +50,10 @@ Three derived formats because the targets genuinely differ:
   portability guarantee below. So the matte is packed **into the picture**: one
   double-width frame, keyed colour on the left, alpha as greyscale on the right, which
   the overlay reassembles into BGRA as it blits. No alpha support required from anything.
-  Encoded 4:4:4 (VP9 profile 1) so the halves do not bleed across the seam.
+  Encoded 4:2:0, VP9 profile 0 — the same baseline as the opaque cut. It briefly shipped
+  as 4:4:4 / profile 1, on the theory that subsampled chroma would bleed across the
+  seam; that was overstated (the matte is greyscale, so its detail is all luma, which
+  4:2:0 keeps at full resolution) and profile 1 cost a recipient the picture entirely.
 - **Desktop fallback → `foxy.mp4`.** What the overlay plays if a pack has no matte cut;
   it then composites over black, exactly as every build before this did. The codec
   reasoning applies to both files. Each is **VP9 in an MP4 container**, not
