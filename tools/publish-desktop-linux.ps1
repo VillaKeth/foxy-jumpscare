@@ -170,11 +170,24 @@ foreach ($sh in 'install.sh', 'uninstall.sh') {
   [System.IO.File]::WriteAllText("$publishDir\$sh", $shLf)
 }
 
+# foxy.ico is the one optional entry. Both desktop apps fall back to a default
+# tray icon when it is absent (TrayController.LoadTrayIcon), and a clean clone
+# cannot build it - it comes from a source still that is gitignored like the
+# rest of the pack. Requiring it here made this script the only thing in the
+# repo that a fresh checkout could not run; the Windows script always treated it
+# as optional. Everything else is load-bearing: drop one and the scare has
+# nothing to show, or the recipient has no way to install it.
+$optional = @('foxy.ico')
 $ship = @('FoxyJumpscare', 'foxy.mp4', 'foxy-alpha.mp4', 'foxy.ico',
-          'INSTALL.txt', 'install.sh', 'uninstall.sh')
-foreach ($f in $ship) {
-  if (-not (Test-Path (Join-Path $publishDir $f))) { throw "missing from publish output: $f" }
-}
+          'INSTALL.txt', 'install.sh', 'uninstall.sh') |
+  Where-Object {
+    $present = Test-Path (Join-Path $publishDir $_)
+    if (-not $present) {
+      if ($optional -notcontains $_) { throw "missing from publish output: $_" }
+      Write-Warning "no $_ - shipping without it; the tray falls back to a default icon."
+    }
+    $present
+  }
 
 if (Test-Path $tarball) { Remove-Item $tarball -Force }
 

@@ -79,6 +79,11 @@ It will not overwrite an existing `foxy-src.mp4` unless you pass `-- --force`. O
 populated checkout that file is the real source, it is gitignored, and nothing in the
 repo can restore it.
 
+`npm run assets` does **not** produce `assets/foxy.ico`, the desktop tray icon — that
+comes from a source still, via `pwsh tools/build-tray-icon.ps1 -Source <image>`. It is
+optional everywhere: both desktop apps fall back to a default tray icon, and both
+publish scripts ship without it.
+
 Either way you get three derived cuts — `foxy.webm` (extension), `foxy-alpha.mp4`
 (transparent desktop) and `foxy.mp4` (desktop fallback). [`assets/PACK.md`](assets/PACK.md)
 explains why each target needs its own.
