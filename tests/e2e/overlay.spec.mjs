@@ -3,6 +3,35 @@ import { existsSync } from 'node:fs';
 
 const SENTINEL = '#foxy-jumpscare-overlay';
 
+/**
+ * Seed storage, once the extension has finished seeding it itself. Each test
+ * gets a throwaway profile, so onInstalled fires and writes defaults; writing
+ * before that lands gets silently overwritten.
+ */
+async function setState(worker, state) {
+  await worker.evaluate(async () => {
+    for (let i = 0; i < 200; i += 1) {
+      if ((await chrome.storage.local.get('remaining')).remaining !== undefined) return;
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    }
+    throw new Error('extension never initialised its countdown');
+  });
+  await worker.evaluate((s) => chrome.storage.local.set(s), state);
+}
+
+/**
+ * Leave the browser with nowhere the overlay can be injected.
+ *
+ * Navigate rather than close: closing the last page tears down the persistent
+ * context the extension is loaded into.
+ */
+async function makeEveryTabPrivileged(context) {
+  if (context.pages().length === 0) await context.newPage();
+  for (const page of context.pages()) {
+    await page.goto('chrome://version').catch(() => {});
+  }
+}
+
 test('injects the overlay into an ordinary page', async ({ context, worker }) => {
   const page = await context.newPage();
   await page.goto('/plain.html');
@@ -54,18 +83,34 @@ test('does not double-inject', async ({ context, worker }) => {
   await expect(page.locator(SENTINEL)).toHaveCount(1);
 });
 
-test('still fires when every tab is privileged, via a standalone window', async ({ context, worker }) => {
-  // Previously this refused and kept the roll. That meant sitting on
-  // about:config or a PDF made the extension silently do nothing. It now falls
-  // back to its own window so the scare still lands - it just cannot be
-  // transparent there.
-  // Navigate rather than close: closing the last page tears down the
-  // persistent context the extension is loaded into.
-  const existing = context.pages();
-  if (existing.length === 0) await context.newPage();
-  for (const page of context.pages()) {
-    await page.goto('chrome://version').catch(() => {});
-  }
+test('declines to fire when every tab is privileged and the fallback is off', async ({ context, worker }) => {
+  // The shipped default. The standalone window is the one overlay that cannot
+  // be transparent, and a fullscreen black screen is not the effect this
+  // extension is for - so with nowhere to draw, it draws nothing.
+  //
+  // Nothing is lost by declining: reporting false leaves the roll unspent, so
+  // the next tick lands transparently on the first ordinary tab opened.
+  await setState(worker, { fallbackWindow: false });
+  await makeEveryTabPrivileged(context);
+
+  const fired = await worker.evaluate(() => globalThis.__foxyTest.fireNow());
+  expect(fired).toBe(false);
+
+  const overlayWindow = await context
+    .waitForEvent('page', {
+      predicate: (p) => p.url().includes('overlay.html'),
+      timeout: 3_000,
+    })
+    .catch(() => null);
+  expect(overlayWindow).toBeNull();
+});
+
+test('opens a standalone black window when every tab is privileged and the fallback is on', async ({ context, worker }) => {
+  // Opt-in. Before the setting existed this was unconditional, which is how a
+  // user sitting on about:addons got a fullscreen black screen instead of the
+  // scare they expected.
+  await setState(worker, { fallbackWindow: true });
+  await makeEveryTabPrivileged(context);
 
   const fired = await worker.evaluate(() => globalThis.__foxyTest.fireNow());
   expect(fired).toBe(true);

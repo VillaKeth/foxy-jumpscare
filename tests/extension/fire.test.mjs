@@ -95,10 +95,14 @@ describe('attemptFire', () => {
       .toContain('chrome-extension://abc/overlay.html');
   });
 
+  // These cover the fallback itself, so they opt into it explicitly. Without
+  // { allowStandaloneWindow: true } the standalone window never opens - that
+  // default is covered by its own describe block at the bottom of this file.
+
   it('opens a standalone window when no tab will take the overlay', async () => {
     const browser = fakeBrowser({ tabs: [{ id: 1, url: 'about:config' }] });
 
-    expect(await attemptFire(browser)).toBe(true);
+    expect(await attemptFire(browser, { allowStandaloneWindow: true })).toBe(true);
     expect(browser.scripting.executeScript).not.toHaveBeenCalled();
     expect(browser.windows.create).toHaveBeenCalledWith({
       url: 'chrome-extension://abc/overlay.html',
@@ -112,7 +116,7 @@ describe('attemptFire', () => {
       executeScript: vi.fn(async () => { throw new Error('nope'); }),
     });
 
-    expect(await attemptFire(browser)).toBe(true);
+    expect(await attemptFire(browser, { allowStandaloneWindow: true })).toBe(true);
     expect(browser.windows.create).toHaveBeenCalledOnce();
   });
 
@@ -122,7 +126,7 @@ describe('attemptFire', () => {
       createWindow: vi.fn(async () => { throw new Error('no window'); }),
     });
 
-    expect(await attemptFire(browser)).toBe(false);
+    expect(await attemptFire(browser, { allowStandaloneWindow: true })).toBe(false);
   });
 
   it('treats an already-present overlay as success', async () => {
@@ -146,7 +150,7 @@ describe('attemptFire', () => {
       ],
     });
 
-    expect(await attemptFire(browser)).toBe(true);
+    expect(await attemptFire(browser, { allowStandaloneWindow: true })).toBe(true);
     // background tab still gets it, so the scare follows a tab switch
     expect(browser.scripting.executeScript).toHaveBeenCalledOnce();
     expect(browser.scripting.executeScript.mock.calls[0][0].target).toEqual({ tabId: 2 });
@@ -165,7 +169,7 @@ describe('attemptFire', () => {
       }),
     });
 
-    expect(await attemptFire(browser)).toBe(true);
+    expect(await attemptFire(browser, { allowStandaloneWindow: true })).toBe(true);
     expect(browser.windows.create).toHaveBeenCalledOnce();
   });
 
@@ -175,7 +179,7 @@ describe('attemptFire', () => {
     // then - only the standalone window actually reaches the screen.
     const browser = fakeBrowser({ focused: false });
 
-    expect(await attemptFire(browser)).toBe(true);
+    expect(await attemptFire(browser, { allowStandaloneWindow: true })).toBe(true);
     expect(browser.windows.create).toHaveBeenCalledOnce();
   });
 
@@ -191,6 +195,64 @@ describe('attemptFire', () => {
       createWindow: vi.fn(async () => { throw new Error('no window'); }),
     });
 
+    expect(await attemptFire(browser, { allowStandaloneWindow: true })).toBe(false);
+  });
+});
+
+// --- the standalone window is opt-in --------------------------------------
+//
+// The standalone window is the only overlay that cannot be transparent: it has
+// no page behind it, so it is painted black. That is a fullscreen black screen
+// rather than Foxy lunging over what you were reading, and it is not what most
+// people want from this extension. It is therefore off unless asked for.
+//
+// Turning it off costs nothing: attemptFire reports false, the caller leaves
+// the roll unspent, and the next tick fires transparently over the first
+// ordinary tab the user lands on.
+
+describe('attemptFire, standalone window not allowed (the default)', () => {
+  it('does not open the standalone window when no tab will take the overlay', async () => {
+    const browser = fakeBrowser({ tabs: [{ id: 1, url: 'about:config' }] });
+
     expect(await attemptFire(browser)).toBe(false);
+    expect(browser.windows.create).not.toHaveBeenCalled();
+  });
+
+  it('does not open the standalone window when the active tab is restricted', async () => {
+    const browser = fakeBrowser({
+      tabs: [
+        { id: 1, url: 'https://addons.mozilla.org/x', active: true },
+        { id: 2, url: 'https://ok.example' },
+      ],
+    });
+
+    expect(await attemptFire(browser)).toBe(false);
+    // The background tab still gets the overlay, so a tab switch mid-scream is
+    // still covered. It just does not count as the user having seen it.
+    expect(browser.scripting.executeScript).toHaveBeenCalledOnce();
+    expect(browser.windows.create).not.toHaveBeenCalled();
+  });
+
+  it('does not open the standalone window when no browser window has focus', async () => {
+    const browser = fakeBrowser({ focused: false });
+
+    expect(await attemptFire(browser)).toBe(false);
+    expect(browser.windows.create).not.toHaveBeenCalled();
+  });
+
+  it('still reports success when the overlay lands in the active tab', async () => {
+    // The setting governs the fallback only. The ordinary transparent path is
+    // untouched by it.
+    const browser = fakeBrowser();
+
+    expect(await attemptFire(browser)).toBe(true);
+    expect(browser.windows.create).not.toHaveBeenCalled();
+  });
+
+  it('is the behaviour when the option is passed explicitly as false', async () => {
+    const browser = fakeBrowser({ tabs: [{ id: 1, url: 'about:config' }] });
+
+    expect(await attemptFire(browser, { allowStandaloneWindow: false })).toBe(false);
+    expect(browser.windows.create).not.toHaveBeenCalled();
   });
 });

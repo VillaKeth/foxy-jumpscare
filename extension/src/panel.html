@@ -45,6 +45,8 @@
   }
   .countdown b { color: var(--fg); font-size: 1.2em; }
 
+  .hint { color: var(--muted); font-size: .8em; margin: -6px 0 12px 26px; }
+
   .status { min-height: 1.4em; margin: 8px 0; font-size: .85em; color: var(--accent); }
   .warn {
     color: var(--muted); font-size: .8em;
@@ -76,6 +78,17 @@
   <span>1 in N chance, every active second</span>
   <input type="number" id="custom" min="1" max="100000000" step="1">
 </label>
+
+<div class="row">
+  <input type="checkbox" id="fallback">
+  <label for="fallback">Scare me even with no page to draw on</label>
+</div>
+<p class="hint">
+  Normally Foxy appears over the page you are reading. On a settings page, a
+  PDF, or while another app has focus there is nothing to appear over, so this
+  opens him fullscreen on a black background instead. Off means he waits for an
+  ordinary tab &mdash; the countdown is not spent while he waits.
+</p>
 
 <div class="countdown">
   Next one in about <b id="remaining">&mdash;</b> of active browsing.

@@ -18,8 +18,13 @@ const FAILSAFE_MS = 8000;
  * one. Scoping it to the active tab meant the scare silently did nothing
  * whenever you happened to be sitting on a restricted page, and it did not
  * follow you if you switched tabs while it was up.
+ *
+ * `allowStandaloneWindow` governs the fallback at the bottom of this function
+ * and nothing else. It defaults to false, matching the stored setting's
+ * default, so the two cannot drift apart: pass nothing and you get the
+ * behaviour the shipped extension has out of the box.
  */
-export async function attemptFire(browser) {
+export async function attemptFire(browser, { allowStandaloneWindow = false } = {}) {
   const tabs = await browser.tabs.query({});
   const targets = tabs.filter((tab) => isInjectableUrl(tab.url));
   const iframeUrl = browser.runtime.getURL('overlay.html');
@@ -62,9 +67,19 @@ export async function attemptFire(browser) {
   // store page, a PDF, or about:config, or no browser window has focus at
   // all (the retry path can fire from the background). A standalone
   // fullscreen window carries it instead; safe to lean on since 0.1.1, when
-  // the overlay page learned to tear itself down. It cannot be transparent,
-  // but a black fullscreen Foxy beats nothing at all. Background-tab overlays
+  // the overlay page learned to tear itself down. Background-tab overlays
   // from above still cover a tab switch mid-scream.
+  //
+  // That window is the one overlay that cannot be transparent - there is no
+  // page behind it to composite over, so it is painted black - which makes it
+  // a fullscreen black screen rather than the effect this extension is for.
+  // It is opt-in for that reason, and off by default.
+  //
+  // Declining it is cheap: reporting false leaves the roll unspent, so the
+  // next tick tries again and lands transparently on the first ordinary tab
+  // the user opens. The scare arrives late rather than wrong.
+  if (!allowStandaloneWindow) return false;
+
   try {
     await browser.windows.create({
       url: iframeUrl,

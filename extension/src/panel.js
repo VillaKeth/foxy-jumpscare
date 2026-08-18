@@ -10,6 +10,7 @@ const remainingEl = el('remaining');
 const noteEl = el('odds-note');
 const statusEl = el('status');
 const testEl = el('test');
+const fallbackEl = el('fallback');
 
 const presetNameFor = (oneInN) =>
   Object.keys(PRESETS).find((k) => PRESETS[k] === oneInN) ?? 'custom';
@@ -37,9 +38,11 @@ async function load() {
     enabled = true,
     oneInN = DEFAULT_ONE_IN_N,
     remaining = 0,
-  } = await chrome.storage.local.get(['enabled', 'oneInN', 'remaining']);
+    fallbackWindow = false,
+  } = await chrome.storage.local.get(['enabled', 'oneInN', 'remaining', 'fallbackWindow']);
 
   enabledEl.checked = enabled;
+  fallbackEl.checked = fallbackWindow;
   oddsEl.value = presetNameFor(oneInN);
   customEl.value = String(oneInN);
   customFieldEl.classList.toggle('hidden', oddsEl.value !== 'custom');
@@ -71,6 +74,13 @@ async function commitOdds() {
 enabledEl.addEventListener('change', async () => {
   await chrome.storage.local.set({ enabled: enabledEl.checked });
   statusEl.textContent = enabledEl.checked ? 'Enabled.' : 'Disabled. Nothing will fire.';
+});
+
+fallbackEl.addEventListener('change', async () => {
+  await chrome.storage.local.set({ fallbackWindow: fallbackEl.checked });
+  statusEl.textContent = fallbackEl.checked
+    ? 'Will use a black fullscreen window when there is no page.'
+    : 'Will wait for an ordinary tab instead.';
 });
 
 oddsEl.addEventListener('change', () => {

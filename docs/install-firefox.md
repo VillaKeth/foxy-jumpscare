@@ -84,6 +84,7 @@ Click the fox in the toolbar.
 | **Enabled** | Off means nothing fires, ever. The countdown stops too. |
 | **Rarity** | Presets from Ultra-rare (~10 weeks) to Terraria-faithful (~2h46m of browsing). |
 | **Custom** | Any 1-in-N you like. `60` fires within a minute or two — good for showing someone. |
+| **Scare me even with no page to draw on** | Off by default. Foxy normally appears *over* the page you are reading. On a settings page, on `addons.mozilla.org`, or while another app has focus there is no page to appear over, so this opens him fullscreen on a black background instead. Left off, he waits for an ordinary tab — and the countdown is not spent while he waits, so nothing is lost. |
 | **Test it now** | Fires immediately. Does **not** spend the real countdown. |
 
 Changing the rarity restarts the countdown. It has to — a countdown drawn at

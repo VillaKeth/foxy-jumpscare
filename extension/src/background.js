@@ -1,19 +1,20 @@
-import { drawRemaining, DEFAULT_ONE_IN_N } from './lib/roll.mjs';
+import { drawRemaining } from './lib/roll.mjs';
 import { TICK_SECONDS, creditTick } from './lib/ticker.mjs';
 import { attemptFire } from './lib/fire.mjs';
+import { seedState, STATE_KEYS } from './lib/state.mjs';
 
 const ALARM = 'foxy-tick';
 const IDLE_THRESHOLD_SECONDS = 15;
 
-async function getState() {
-  const stored = await chrome.storage.local.get(['remaining', 'oneInN', 'enabled']);
-  const oneInN = stored.oneInN ?? DEFAULT_ONE_IN_N;
-  return {
-    enabled: stored.enabled ?? true,
-    oneInN,
-    remaining: stored.remaining ?? drawRemaining(oneInN),
-  };
-}
+/**
+ * The current settings, with defaults filled in for anything unset.
+ *
+ * Same function the install handler uses, on purpose: the running extension
+ * and a freshly seeded store cannot then disagree about what a default is.
+ * `fallbackWindow` in particular defaults to false here and in attemptFire's
+ * signature, so neither side can drift.
+ */
+const getState = async () => seedState(await chrome.storage.local.get(STATE_KEYS));
 
 /**
  * chrome.idle reports *system* idle, so it stays 'active' while the user works
@@ -38,7 +39,7 @@ async function tick() {
   await chrome.storage.local.set({ remaining, oneInN: state.oneInN, enabled: state.enabled });
 
   if (shouldFire) {
-    const fired = await attemptFire(chrome);
+    const fired = await attemptFire(chrome, { allowStandaloneWindow: state.fallbackWindow });
     if (fired) {
       await chrome.storage.local.set({ remaining: drawRemaining(state.oneInN) });
     }
@@ -52,8 +53,10 @@ function scheduleAlarm() {
 }
 
 chrome.runtime.onInstalled.addListener(async () => {
-  const { oneInN = DEFAULT_ONE_IN_N } = await chrome.storage.local.get('oneInN');
-  await chrome.storage.local.set({ oneInN, remaining: drawRemaining(oneInN), enabled: true });
+  // Fires on update as well as on first install. seedState keeps whatever the
+  // user already chose and fills in only what is missing - see the note there
+  // for what that handler used to reset on every release.
+  await chrome.storage.local.set(seedState(await chrome.storage.local.get(STATE_KEYS)));
   scheduleAlarm();
 });
 
@@ -73,10 +76,14 @@ chrome.alarms.onAlarm.addListener((alarm) => {
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   if (message?.type !== 'foxy:test-fire') return undefined;
 
-  attemptFire(chrome).then(
-    (fired) => sendResponse({ fired }),
-    (err) => sendResponse({ fired: false, error: String(err) })
-  );
+  // Honours the fallback setting too, so "Test it now" shows what a real fire
+  // would do rather than a more forgiving version of it.
+  getState()
+    .then((state) => attemptFire(chrome, { allowStandaloneWindow: state.fallbackWindow }))
+    .then(
+      (fired) => sendResponse({ fired }),
+      (err) => sendResponse({ fired: false, error: String(err) })
+    );
   return true; // keep the message channel open for the async reply
 });
 
@@ -87,7 +94,14 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
  * tests to fire on demand instead of waiting out a week-long countdown.
  */
 globalThis.__foxyTest = {
-  fireNow: () => attemptFire(chrome),
+  // Reads the stored setting rather than taking attemptFire's default, so the
+  // hook fires the same way a real tick would. A hook that always declined the
+  // fallback could not exercise it at all; one that always allowed it would
+  // report a scare the shipped default would never show.
+  fireNow: async () => {
+    const { fallbackWindow } = await getState();
+    return attemptFire(chrome, { allowStandaloneWindow: fallbackWindow });
+  },
   setRemaining: (remaining) => chrome.storage.local.set({ remaining }),
   tickNow: () => tick(),
 };

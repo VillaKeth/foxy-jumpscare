@@ -3,7 +3,8 @@ import { test, expect } from './fixtures.mjs';
 const SENTINEL = '#foxy-jumpscare-overlay';
 
 const readState = (worker) =>
-  worker.evaluate(() => chrome.storage.local.get(['enabled', 'oneInN', 'remaining']));
+  worker.evaluate(() =>
+    chrome.storage.local.get(['enabled', 'oneInN', 'remaining', 'fallbackWindow']));
 
 /**
  * Seed storage, once the extension has finished seeding it itself.
@@ -77,8 +78,15 @@ test('custom odds are accepted and rejected on their merits', async ({ context, 
   expect((await readState(worker)).oneInN).toBe(250);
 });
 
+// openPanel opens the panel in a tab of its own, so the panel IS the active
+// tab for the whole of these two tests - there is no ordinary page in front of
+// the user. That is the "nothing to draw on" case, which is exactly what the
+// fallback setting governs. (In real use the panel is a popup and the page
+// behind it stays active, which is the plain injected path the tests above
+// already cover.)
+
 test('"Test it now" fires without spending the real roll', async ({ context, worker, extensionId }) => {
-  await setState(worker, { oneInN: 100_000, remaining: 42_000 });
+  await setState(worker, { oneInN: 100_000, remaining: 42_000, fallbackWindow: true });
 
   const page = await context.newPage();
   await page.goto('/plain.html');
@@ -91,4 +99,34 @@ test('"Test it now" fires without spending the real roll', async ({ context, wor
 
   // The invariant: a test - successful or not - leaves the countdown alone.
   expect((await readState(worker)).remaining).toBe(42_000);
+});
+
+test('"Test it now" says so rather than going black, with the fallback off', async ({ context, worker, extensionId }) => {
+  await setState(worker, { oneInN: 100_000, remaining: 42_000, fallbackWindow: false });
+
+  const page = await context.newPage();
+  await page.goto('/plain.html');
+
+  const panel = await openPanel(context, extensionId);
+  await panel.locator('#test').click();
+
+  await expect(panel.locator('#status'))
+    .toHaveText('Could not fire — open an ordinary http(s) tab and try again.');
+
+  // The background tab still took the overlay, so a tab switch mid-scream is
+  // covered. It just does not count as the user having seen it.
+  await expect(page.locator(SENTINEL)).toBeAttached();
+  expect((await readState(worker)).remaining).toBe(42_000);
+});
+
+test('the fallback checkbox is off by default and persists when ticked', async ({ context, worker, extensionId }) => {
+  await setState(worker, { oneInN: 100_000, remaining: 90_061 });
+
+  const panel = await openPanel(context, extensionId);
+  await expect(panel.locator('#fallback')).not.toBeChecked();
+
+  await panel.locator('#fallback').check();
+  await expect(panel.locator('#status'))
+    .toHaveText('Will use a black fullscreen window when there is no page.');
+  expect((await readState(worker)).fallbackWindow).toBe(true);
 });
