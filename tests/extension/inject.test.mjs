@@ -8,6 +8,25 @@ const URL_ = 'chrome-extension://abc/overlay.html';
  * them as parameters, because MV3's isolated world forbids the eval-based
  * wrapper that passing them would require. So the test swaps the globals.
  */
+const camel = (name) => name.replace(/-([a-z])/g, (_, c) => c.toUpperCase());
+
+/**
+ * Enough of CSSStyleDeclaration to tell an ordinary inline value from an
+ * inline !important one - the distinction the overlay now depends on.
+ */
+function fakeStyle() {
+  const priority = {};
+  const style = {
+    setProperty(name, value, prio) {
+      style[camel(name)] = value;
+      priority[name] = prio ?? '';
+    },
+    getPropertyValue: (name) => style[camel(name)] ?? '',
+    getPropertyPriority: (name) => priority[name] ?? '',
+  };
+  return style;
+}
+
 function fakeDom() {
   const listeners = {};
   const appended = [];
@@ -16,7 +35,7 @@ function fakeDom() {
   const doc = {
     getElementById: (id) => byId[id] ?? null,
     createElement: (tag) => ({
-      tag, id: '', src: '', style: {}, attrs: {},
+      tag, id: '', src: '', style: fakeStyle(), attrs: {},
       setAttribute(k, v) { this.attrs[k] = v; },
       remove() { delete byId[this.id]; this.removed = true; },
     }),
@@ -71,7 +90,26 @@ describe('injectOverlayFn', () => {
     // backdrop here makes it a video player instead - 0.1.3 shipped that by
     // mistake and 0.1.4 took it back out.
     injectOverlayFn(URL_, 3000);
-    expect(dom.appended[0].style.background).toBe('transparent');
+    expect(dom.appended[0].style.getPropertyValue('background-color')).toBe('transparent');
+  });
+
+  it('pins colour-scheme and background as inline !important', () => {
+    // Measured against Dark Reader on a real page: it publishes
+    // `color-scheme: dark !important`, which beats an ordinary inline value.
+    // The frame's used scheme then became `dark` while overlay.html itself
+    // never opts into dark, so Firefox painted an opaque light canvas behind
+    // the frame - a fullscreen WHITE backdrop instead of the page.
+    //
+    // An inline !important declaration outranks an author !important rule, so
+    // this is what survives a page-recolouring extension.
+    injectOverlayFn(URL_, 3000);
+    const { style } = dom.appended[0];
+
+    expect(style.getPropertyValue('color-scheme')).toBe('normal');
+    expect(style.getPropertyPriority('color-scheme')).toBe('important');
+
+    expect(style.getPropertyValue('background-color')).toBe('transparent');
+    expect(style.getPropertyPriority('background-color')).toBe('important');
   });
 
   it('delegates autoplay permission to the iframe', () => {

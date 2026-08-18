@@ -43,12 +43,30 @@ export function injectOverlayFn(iframeUrl, failsafeMs) {
     border: '0',
     zIndex: '2147483647',
     pointerEvents: 'none',
-    // Transparent so the page stays visible behind the keyed video - see the
-    // note in overlay.html. colorScheme 'normal' stops a dark-mode host from
-    // handing the frame a painted backdrop of its own.
-    background: 'transparent',
-    colorScheme: 'normal',
   });
+
+  // The two declarations the effect actually depends on, both pinned with
+  // inline !important rather than set as ordinary inline values.
+  //
+  // Transparent, so the page stays visible behind the keyed video - see the
+  // note in overlay.html. 'normal' colour-scheme stops the host from handing
+  // the frame a painted backdrop of its own.
+  //
+  // Ordinary inline values were not enough. Dark Reader - a very common
+  // extension, and the way a lot of people get dark mode on sites that have
+  // none - publishes `color-scheme: dark !important`, which outranks a plain
+  // inline value. The frame's used scheme then resolves to dark while
+  // overlay.html never opts into dark itself, and Firefox paints an opaque
+  // light canvas behind the frame. The result is a FULLSCREEN WHITE backdrop
+  // with Foxy on it, instead of the page. Measured on a real page with Dark
+  // Reader in its default dynamic mode: computed colour-scheme on the frame
+  // came back "dark" despite this code setting "normal", and every sampled
+  // pixel of the viewport read rgb(255, 255, 255).
+  //
+  // An inline !important declaration is the top of the author cascade, so it
+  // survives that. Any other page-recolouring extension gets the same answer.
+  iframe.style.setProperty('color-scheme', 'normal', 'important');
+  iframe.style.setProperty('background-color', 'transparent', 'important');
 
   let timer = null;
   let finished = false;
