@@ -35,6 +35,20 @@ setTimeout(async () => {
   const all = await chrome.tabs.query({});
   send({ stage: 'tabs', count: all.length });
 
+  // Take focus before firing. attemptFire only counts a scare as landed when a
+  // browser window actually has OS focus - a scare nobody was looking at must
+  // not spend the roll - and a browser launched by web-ext from a terminal does
+  // not reliably have it. Without this the run measures the window manager
+  // rather than the extension.
+  //
+  // This used to go unnoticed: an unfocused window took the standalone-window
+  // fallback, which reported success anyway. Now that the fallback is opt-in
+  // and off by default, an unfocused window makes attemptFire report false.
+  const win = await chrome.windows.getLastFocused().catch(() => null);
+  if (win) await chrome.windows.update(win.id, { focused: true }).catch(() => {});
+  const refocused = await chrome.windows.getLastFocused().catch(() => null);
+  send({ stage: 'focus', focused: refocused?.focused ?? null });
+
   const fired = await globalThis.__foxyTest.fireNow();
   send({ stage: 'fire', fired });
 
@@ -63,7 +77,23 @@ setTimeout(async () => {
 
 const OVERLAY_PROBE = `
 const R = 'http://localhost:${PORT}/report';
-const post = (d) => fetch(R, { method: 'POST', body: JSON.stringify(d) }).catch(() => {});
+
+// sendBeacon, NOT fetch. The overlay tears itself down on 'ended' - the parent
+// content script removes the iframe within a few ms - and that destroys the
+// document out from under any request still in flight. The sample below is
+// taken at 600ms against a video that ends around 890ms, so on a cold start
+// (first launch after a rebuild, slowest decode, slowest JIT) the POST was
+// still open when the frame went away and the report was silently lost. That
+// produced a run where 'video' arrived but 'playback' and 'alpha' did not, and
+// four checks failed on an extension that was working correctly.
+//
+// Measured, twice, by posting the same payload both ways at 'ended': the fetch
+// was lost every time, the beacon arrived every time. Beacons are handed to the
+// browser and survive unload, which is exactly the property needed here.
+//
+// The collector reads the raw body and JSON.parses it, so it does not care that
+// this arrives as text/plain rather than application/json.
+const post = (d) => navigator.sendBeacon(R, JSON.stringify(d));
 
 video.addEventListener('loadeddata', () =>
   post({ stage: 'video', w: video.videoWidth, h: video.videoHeight, duration: video.duration }));
@@ -182,9 +212,33 @@ child.stderr.on('data', (d) => { webExtOutput += d; });
 
 console.log('  launching Firefox, waiting for the overlay to fire...');
 
+/**
+ * Wait for every stage the checks below actually read, not just the last one to
+ * be written.
+ *
+ * This used to wait on 'alpha' alone and then kill Firefox. That was only ever
+ * safe by accident: 'alpha' was the report most likely to go missing, so the
+ * loop usually sat here for the full deadline and everything else arrived in
+ * the meantime. Once the overlay probe was switched to sendBeacon and 'alpha'
+ * started landing reliably at around fire+650ms, the loop began exiting there
+ * and killing the browser before the background probe's 'page' check at
+ * fire+700ms could report - turning one intermittent failure into a different
+ * one, in a build that was working.
+ *
+ * The deadline still bounds it, so a genuinely broken build fails instead of
+ * hanging.
+ */
+const NEEDED = ['fire', 'video', 'playback', 'alpha'];
+const haveAll = () =>
+  NEEDED.every((s) => reports.some((r) => r.stage === s)) &&
+  // Same tab-order reasoning as pageHit below: waiting for merely *a* 'page'
+  // report lets an unrelated tab's present:false answer end the wait and kill
+  // the browser before the tab that actually has the overlay replies.
+  reports.some((r) => r.stage === 'page' && r.present === true);
+
 const deadline = Date.now() + 45_000;
-while (Date.now() < deadline && !reports.some((r) => r.stage === 'alpha')) {
-  await new Promise((r) => setTimeout(r, 500));
+while (Date.now() < deadline && !haveAll()) {
+  await new Promise((r) => setTimeout(r, 250));
 }
 
 child.kill();
@@ -192,12 +246,27 @@ server.close();
 await rm(workDir, { recursive: true, force: true }).catch(() => {});
 
 const by = (stage) => reports.find((r) => r.stage === stage);
+
+/**
+ * The background probe emits one 'page' report per open tab, so "did the
+ * overlay land?" is a question about ANY tab, not about whichever tab happened
+ * to answer first. Reading reports[0] made the result depend on tab order: any
+ * second tab in the profile could report present:false ahead of the real one
+ * and fail a build that was working.
+ */
+const pageHit = reports.find((r) => r.stage === 'page' && r.present === true);
+const anyPage = pageHit ?? by('page');
+
 console.log('\n  Firefox behavioural checks:');
 
 const ok = [
-  check('extension fired', by('fire')?.fired === true),
-  check('overlay iframe injected', by('page')?.present === true,
-    by('page') ? `z-index ${by('page').zIndex}, allow="${by('page').allow}"` : 'no report'),
+  // The focus detail is here because it is the one thing that can make this
+  // check fail on a working build: no focused window means no scare the user
+  // could have seen, which attemptFire correctly reports as not fired.
+  check('extension fired', by('fire')?.fired === true,
+    `window focused: ${by('focus')?.focused ?? 'unknown'}`),
+  check('overlay iframe injected', Boolean(pageHit),
+    anyPage ? `z-index ${anyPage.zIndex}, allow="${anyPage.allow}"` : 'no report'),
   check('VP9 video decoded', by('video')?.w > 0,
     by('video') ? `${by('video').w}x${by('video').h}, ${by('video').duration}s` : 'no report'),
   check('playing, not blocked', by('playback')?.paused === false),
