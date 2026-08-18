@@ -30,7 +30,7 @@ export function seedState(stored, draw = drawRemaining) {
   return {
     oneInN,
     enabled: current.enabled ?? true,
-    fallbackWindow: current.fallbackWindow ?? false,
+    fallbackWindow: current.fallbackWindow ?? true,
     remaining: current.remaining ?? draw(oneInN),
   };
 }

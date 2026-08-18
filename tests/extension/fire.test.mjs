@@ -95,9 +95,20 @@ describe('attemptFire', () => {
       .toContain('chrome-extension://abc/overlay.html');
   });
 
-  // These cover the fallback itself, so they opt into it explicitly. Without
-  // { allowStandaloneWindow: true } the standalone window never opens - that
-  // default is covered by its own describe block at the bottom of this file.
+  // These cover the fallback itself. It is on by default, so passing the
+  // option is redundant here - it is passed anyway to say out loud which
+  // behaviour each test is pinning. Switching it off is covered by its own
+  // describe block at the bottom of this file.
+
+  it('opens the standalone window by default, with no options passed', async () => {
+    // The shipped default. attemptFire's own default has to match the stored
+    // one in state.mjs, or the running extension and a freshly seeded store
+    // disagree about what happens on a restricted tab.
+    const browser = fakeBrowser({ tabs: [{ id: 1, url: 'about:config' }] });
+
+    expect(await attemptFire(browser)).toBe(true);
+    expect(browser.windows.create).toHaveBeenCalledOnce();
+  });
 
   it('opens a standalone window when no tab will take the overlay', async () => {
     const browser = fakeBrowser({ tabs: [{ id: 1, url: 'about:config' }] });
@@ -199,22 +210,22 @@ describe('attemptFire', () => {
   });
 });
 
-// --- the standalone window is opt-in --------------------------------------
+// --- the standalone window can be switched off ----------------------------
 //
 // The standalone window is the only overlay that cannot be transparent: it has
-// no page behind it, so it is painted black. That is a fullscreen black screen
-// rather than Foxy lunging over what you were reading, and it is not what most
-// people want from this extension. It is therefore off unless asked for.
+// no page behind it, so it is painted black. It is on by default, because a
+// scare that silently does nothing reads as a broken extension - but anyone
+// who would rather never see a black screen can turn it off in the panel.
 //
 // Turning it off costs nothing: attemptFire reports false, the caller leaves
 // the roll unspent, and the next tick fires transparently over the first
 // ordinary tab the user lands on.
 
-describe('attemptFire, standalone window not allowed (the default)', () => {
+describe('attemptFire, standalone window switched off by the user', () => {
   it('does not open the standalone window when no tab will take the overlay', async () => {
     const browser = fakeBrowser({ tabs: [{ id: 1, url: 'about:config' }] });
 
-    expect(await attemptFire(browser)).toBe(false);
+    expect(await attemptFire(browser, { allowStandaloneWindow: false })).toBe(false);
     expect(browser.windows.create).not.toHaveBeenCalled();
   });
 
@@ -226,7 +237,7 @@ describe('attemptFire, standalone window not allowed (the default)', () => {
       ],
     });
 
-    expect(await attemptFire(browser)).toBe(false);
+    expect(await attemptFire(browser, { allowStandaloneWindow: false })).toBe(false);
     // The background tab still gets the overlay, so a tab switch mid-scream is
     // still covered. It just does not count as the user having seen it.
     expect(browser.scripting.executeScript).toHaveBeenCalledOnce();
@@ -236,7 +247,7 @@ describe('attemptFire, standalone window not allowed (the default)', () => {
   it('does not open the standalone window when no browser window has focus', async () => {
     const browser = fakeBrowser({ focused: false });
 
-    expect(await attemptFire(browser)).toBe(false);
+    expect(await attemptFire(browser, { allowStandaloneWindow: false })).toBe(false);
     expect(browser.windows.create).not.toHaveBeenCalled();
   });
 
@@ -245,7 +256,7 @@ describe('attemptFire, standalone window not allowed (the default)', () => {
     // untouched by it.
     const browser = fakeBrowser();
 
-    expect(await attemptFire(browser)).toBe(true);
+    expect(await attemptFire(browser, { allowStandaloneWindow: false })).toBe(true);
     expect(browser.windows.create).not.toHaveBeenCalled();
   });
 

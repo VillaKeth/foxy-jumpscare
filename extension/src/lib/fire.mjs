@@ -20,11 +20,11 @@ const FAILSAFE_MS = 8000;
  * follow you if you switched tabs while it was up.
  *
  * `allowStandaloneWindow` governs the fallback at the bottom of this function
- * and nothing else. It defaults to false, matching the stored setting's
- * default, so the two cannot drift apart: pass nothing and you get the
+ * and nothing else. It defaults to true, matching the stored setting's default
+ * in state.mjs, so the two cannot drift apart: pass nothing and you get the
  * behaviour the shipped extension has out of the box.
  */
-export async function attemptFire(browser, { allowStandaloneWindow = false } = {}) {
+export async function attemptFire(browser, { allowStandaloneWindow = true } = {}) {
   const tabs = await browser.tabs.query({});
   const targets = tabs.filter((tab) => isInjectableUrl(tab.url));
   const iframeUrl = browser.runtime.getURL('overlay.html');
@@ -73,7 +73,10 @@ export async function attemptFire(browser, { allowStandaloneWindow = false } = {
   // That window is the one overlay that cannot be transparent - there is no
   // page behind it to composite over, so it is painted black - which makes it
   // a fullscreen black screen rather than the effect this extension is for.
-  // It is opt-in for that reason, and off by default.
+  // It is on by default anyway: a scare that silently does nothing reads as a
+  // broken extension, and a rare scare you miss entirely is worse than one
+  // that arrives on a plain background. Anyone who disagrees can switch it off
+  // in the panel, and this is the only thing that switch controls.
   //
   // Declining it is cheap: reporting false leaves the roll unspent, so the
   // next tick tries again and lands transparently on the first ordinary tab

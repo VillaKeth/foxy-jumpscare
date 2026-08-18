@@ -119,14 +119,16 @@ test('"Test it now" says so rather than going black, with the fallback off', asy
   expect((await readState(worker)).remaining).toBe(42_000);
 });
 
-test('the fallback checkbox is off by default and persists when ticked', async ({ context, worker, extensionId }) => {
+test('the fallback checkbox is on by default and persists when unticked', async ({ context, worker, extensionId }) => {
+  // setState deliberately does not write fallbackWindow, so this reads the
+  // value the extension seeded for itself rather than one the test planted.
   await setState(worker, { oneInN: 100_000, remaining: 90_061 });
 
   const panel = await openPanel(context, extensionId);
-  await expect(panel.locator('#fallback')).not.toBeChecked();
+  await expect(panel.locator('#fallback')).toBeChecked();
 
-  await panel.locator('#fallback').check();
+  await panel.locator('#fallback').uncheck();
   await expect(panel.locator('#status'))
-    .toHaveText('Will use a black fullscreen window when there is no page.');
-  expect((await readState(worker)).fallbackWindow).toBe(true);
+    .toHaveText('Will wait for an ordinary tab instead.');
+  expect((await readState(worker)).fallbackWindow).toBe(false);
 });

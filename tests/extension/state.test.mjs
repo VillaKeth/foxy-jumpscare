@@ -10,7 +10,7 @@ describe('seedState, on a first install', () => {
     expect(seedState({}, draw)).toEqual({
       oneInN: DEFAULT_ONE_IN_N,
       enabled: true,
-      fallbackWindow: false,
+      fallbackWindow: true,
       remaining: 4242,
     });
   });
@@ -45,12 +45,14 @@ describe('seedState, on an update', () => {
     expect(seedState({ oneInN: 60 }, draw).oneInN).toBe(60);
   });
 
-  it('keeps the black-window fallback switched on', () => {
-    expect(seedState({ fallbackWindow: true }, draw).fallbackWindow).toBe(true);
+  it('keeps the black-window fallback switched off if the user unticked it', () => {
+    // The one that actually needs ?? rather than ||: false is a real choice
+    // here, not an unset value, and every update must respect it.
+    expect(seedState({ fallbackWindow: false }, draw).fallbackWindow).toBe(false);
   });
 
   it('preserves a fully populated record untouched', () => {
-    const stored = { oneInN: 60, enabled: false, fallbackWindow: true, remaining: 12 };
+    const stored = { oneInN: 60, enabled: false, fallbackWindow: false, remaining: 12 };
     expect(seedState(stored, draw)).toEqual(stored);
   });
 
