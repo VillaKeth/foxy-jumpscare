@@ -45,6 +45,17 @@ public static class OverlayWindow
     private static int _width, _height, _stride;
 
     /// <summary>
+    /// When each displayed frame reached the screen, under FOXY_TRACE only.
+    /// A frame count alone cannot tell a smooth scare from one that shows
+    /// frame 1, stalls, and then catches up - which is what "Foxy freezes on
+    /// the first frame" looks like from the outside.
+    /// </summary>
+    private static readonly List<long> _frameTimes = new();
+
+    /// <summary>Milliseconds spent unpacking a frame, summed, under trace.</summary>
+    private static long _unpackTicks;
+
+    /// <summary>
     /// Width of one composited frame. Equals <see cref="_width"/> for the opaque
     /// cut, and half of it for the side-by-side matte cut, where the decoded
     /// picture is [colour | alpha] and only the left half is the picture.
@@ -59,7 +70,7 @@ public static class OverlayWindow
     private static int _marginMs = 1500;
 
     /// <summary>How long the last frame holds after the clip ends.</summary>
-    private static int _holdMs = 600;
+    private static int _holdMs = 250;
 
     /// <summary>
     /// Time from "the scare fired" to each stage of getting a picture up. The
@@ -215,7 +226,7 @@ public static class OverlayWindow
     /// opaque cut, which composites over black exactly as it always did.
     /// </param>
     public static void ShowAll(
-        string? videoPath, int failsafeMarginMs, bool sideBySideMatte = false, int holdMs = 600)
+        string? videoPath, int failsafeMarginMs, bool sideBySideMatte = false, int holdMs = 250)
     {
         Close(); // never stack overlays
         _tearing = false;
@@ -413,6 +424,8 @@ public static class OverlayWindow
         {
             if (_tearing || _bitmap is null || _buffer == IntPtr.Zero) return;
 
+            var unpackStart = Trace ? System.Diagnostics.Stopwatch.GetTimestamp() : 0L;
+
             using (var fb = _bitmap.Lock())
             {
                 var src = (byte*)_buffer;
@@ -449,8 +462,11 @@ public static class OverlayWindow
                 }
             }
 
+            if (Trace) _unpackTicks += System.Diagnostics.Stopwatch.GetTimestamp() - unpackStart;
+
             foreach (var image in _images) image.InvalidateVisual();
             if (Trace && _frames == 0) Log($"t+{_since.ElapsedMilliseconds}ms FIRST FRAME on screen");
+            if (Trace) _frameTimes.Add(_since.ElapsedMilliseconds);
             _frames++;
         }, DispatcherPriority.Render);
     }
@@ -619,8 +635,25 @@ public static class OverlayWindow
     public static void Close()
     {
         if (Trace && _windows.Count > 0)
+        {
             Log($"t+{_since.ElapsedMilliseconds}ms closing: {_frames} frames rendered " +
                 $"across {_windows.Count} monitor(s)");
+
+            if (_frameTimes.Count > 1)
+            {
+                var gaps = new List<long>();
+                for (var i = 1; i < _frameTimes.Count; i++)
+                    gaps.Add(_frameTimes[i] - _frameTimes[i - 1]);
+                gaps.Sort();
+                var unpackMs = _unpackTicks * 1000.0 / System.Diagnostics.Stopwatch.Frequency;
+                Log($"frame gaps ms: min={gaps[0]} median={gaps[gaps.Count / 2]} " +
+                    $"max={gaps[gaps.Count - 1]}; unpack total={unpackMs:F0}ms " +
+                    $"({unpackMs / _frameTimes.Count:F1}ms/frame on the UI thread)");
+                Log($"frame arrival t+ms: {string.Join(",", _frameTimes)}");
+            }
+        }
+        _frameTimes.Clear();
+        _unpackTicks = 0;
         _tearing = true;
         _frames = 0;
 

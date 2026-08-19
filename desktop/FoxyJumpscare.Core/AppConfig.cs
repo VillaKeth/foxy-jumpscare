@@ -25,10 +25,16 @@ public sealed class AppConfig
     /// So it is its own setting - the hold is a judgement call about how the
     /// scare feels, and it has nothing to do with what the audio needs.
     ///
+    /// Third pass, 2026-08-19: 600ms was still reported as "frozen for a
+    /// noticeable amount of time". Measured against the clip it sits on: the
+    /// video runs ~0.7s, so a 600ms hold was very nearly half the time Foxy
+    /// was on screen, all of it a single motionless frame. 250ms leaves a beat
+    /// on the landing without reading as a stall.
+    ///
     /// Clamped to <see cref="FailsafeMarginMs"/> at use, since the overlay is
     /// gone by then regardless.
     /// </summary>
-    public int OverlayHoldMs { get; set; } = 600;
+    public int OverlayHoldMs { get; set; } = 250;
 
     public bool RunAtStartup { get; set; }
 }
