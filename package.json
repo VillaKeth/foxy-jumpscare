@@ -17,6 +17,7 @@
     "publish:firefox": "node tools/firefox-dist.mjs publish",
     "verify:desktop": "pwsh -NoProfile -File tools/verify-desktop.ps1",
     "icons": "node tools/make-icons.mjs",
+    "promo": "node tools/make-promo-tiles.mjs",
     "package": "node tools/package.mjs",
     "package:source": "node tools/package-source.mjs"
   },

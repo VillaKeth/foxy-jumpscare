@@ -43,9 +43,11 @@ Dashboard: <https://addons.opera.com/developer/package/305717/>
   permission is genuinely required — answer any moderator query in the
   Conversation tab rather than removing it.
 - **The listing icon must be 64x64**, which the extension does not ship.
-  Generate one by temporarily adding `64` to `SIZES` in `tools/make-icons.mjs`,
-  then delete the file: shipping an icon the manifest never references would
-  trip the "no unused files" criterion.
+  `npm run icons` now writes one to `dist/store/logo-64.png`, outside the
+  package — upload that. It used to mean temporarily adding `64` to `SIZES` and
+  deleting the file afterwards, because an icon the manifest never references
+  trips the "no unused files" criterion; `STORE_SIZES` in `tools/make-icons.mjs`
+  removes that trap.
 
 ## What to upload
 

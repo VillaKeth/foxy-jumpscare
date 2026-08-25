@@ -34,6 +34,21 @@ const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const OUT_DIR = join(REPO_ROOT, 'extension', 'src', 'icons');
 const SIZES = [16, 32, 48, 96, 128];
 
+// Store-listing artwork, which is uploaded to a storefront by hand and is NOT
+// part of the extension package. It lands in dist/ rather than extension/src/
+// on purpose: buildExtension copies extension/src wholesale, so a 300px logo
+// left there would ride along in every published zip as dead weight.
+//
+//   64  - Opera add-ons requires exactly this for the listing icon.
+//  300  - Microsoft Partner Center's recommended Edge logo (1:1, 128 minimum).
+//
+// Both were previously produced by temporarily adding the size to SIZES and
+// deleting the file afterwards, because an icon the manifest never references
+// trips Opera's "no unused files" check. Emitting them here instead means the
+// package is never polluted in the first place.
+const STORE_DIR = join(REPO_ROOT, 'dist', 'store');
+const STORE_SIZES = [64, 300];
+
 // Tuned to the Withered Foxy render in this pack: ear tips to just under the
 // open jaw. Override for a different source image.
 const DEFAULT_CROP = { x: 145, y: 8, side: 360 };
@@ -200,21 +215,39 @@ if (argv.source && !existsSync(source)) {
 
 const usePack = existsSync(source);
 
+async function writeIcon(size, file) {
+  if (usePack) deriveIcon(source, crop, size, file);
+  else await writeFile(file, encodePng(size, render(size)));
+}
+
 // Without a pack image, icons already on disk are left alone. That is what
 // makes the submitted package reproducible: an AMO reviewer copies icons/*.png
 // out of it, builds, and gets the same bytes back - exactly as they already do
 // with foxy.webm. Redrawing over them here would guarantee a mismatch instead.
 // Delete the directory to force the original art back.
-if (!usePack && SIZES.every((size) => existsSync(join(OUT_DIR, `icon-${size}.png`)))) {
+const keepPackageIcons =
+  !usePack && SIZES.every((size) => existsSync(join(OUT_DIR, `icon-${size}.png`)));
+
+if (keepPackageIcons) {
   console.log(`  keeping existing icons in ${OUT_DIR} (no pack image)`);
-  process.exit(0);
+} else {
+  console.log(usePack ? `  from ${source}` : '  from original art (no pack image)');
+
+  for (const size of SIZES) {
+    const file = join(OUT_DIR, `icon-${size}.png`);
+    await writeIcon(size, file);
+    console.log(`  ${size}x${size}  ${file}`);
+  }
 }
 
-console.log(usePack ? `  from ${source}` : '  from original art (no pack image)');
+// Store artwork is regenerated even when the package icons are being preserved.
+// The reproducibility argument above is about bytes a reviewer can rebuild from
+// the submitted package; this logo is never in that package, so freezing it
+// would buy nothing and just leave the storefront art stale.
+await mkdir(STORE_DIR, { recursive: true });
 
-for (const size of SIZES) {
-  const file = join(OUT_DIR, `icon-${size}.png`);
-  if (usePack) deriveIcon(source, crop, size, file);
-  else await writeFile(file, encodePng(size, render(size)));
-  console.log(`  ${size}x${size}  ${file}`);
+for (const size of STORE_SIZES) {
+  const file = join(STORE_DIR, `logo-${size}.png`);
+  await writeIcon(size, file);
+  console.log(`  ${size}x${size}  ${file}  (store listing - not shipped in the package)`);
 }

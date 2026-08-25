@@ -3,6 +3,12 @@
 Everything here is prepared and ready. The submission itself needs your accounts
 and your decision — read the first section before uploading anything.
 
+The other two storefronts have their own playbooks, because their forms and
+their failure modes differ: `docs/publishing-edge.md` and
+`docs/publishing-opera.md`. Anything shared — the asset question below, the
+permission justifications, `PRIVACY.md` — lives in one place and is referenced
+from the others rather than restated.
+
 ---
 
 ## Read this first: the asset is not ours
@@ -55,8 +61,10 @@ npm run package
 Output:
 
 ```
-dist/packages/foxy-jumpscare-chrome-v0.1.6.zip     ~248 KB
-dist/packages/foxy-jumpscare-firefox-v0.1.6.zip    ~248 KB
+dist/packages/foxy-jumpscare-chrome-vX.Y.Z.zip     ~301 KB
+dist/packages/foxy-jumpscare-firefox-vX.Y.Z.zip    ~301 KB
+dist/packages/foxy-jumpscare-opera-vX.Y.Z.zip      ~301 KB
+dist/packages/foxy-jumpscare-edge-vX.Y.Z.zip       ~301 KB
 ```
 
 Bump `version` in `extension/manifest.base.json` before every resubmission —
@@ -68,9 +76,15 @@ both stores reject a version that already exists.
 
 **Name:** Foxy Jumpscare
 
-**Short summary** (Chrome: 132 chars max)
+**Short summary** (Chrome: 132 chars max) — **not editable in the dashboard.**
+Both stores read it from the manifest's `description` field, so change it in
+`extension/manifest.base.json`, rebuild, and re-upload. It currently reads:
 
-> A rare jumpscare while you browse. One in 100,000 chance every second — you'll forget it's installed long before it fires.
+> A rare jumpscare while you browse. One in 100,000 chance every second. You'll forget it's installed long before it fires.
+
+121 characters. This doc used to carry a second, different summary alongside the
+manifest's, which meant the nicer one was never what a store actually displayed.
+There is one now; keep it that way.
 
 **Description**
 
@@ -113,7 +127,7 @@ not embellish them.
 | `idle` | Determines whether the user is actively at the computer, so the odds count only active browsing time rather than time the machine is switched on. |
 | `storage` | Stores the user's rarity setting, enabled state, and the countdown, locally on the device. |
 | `scripting` | Injects the overlay into the page when the jumpscare fires. |
-| `host_permissions: <all_urls>` | The jumpscare must be able to appear on whatever page the user is on when it fires. The extension does not read, collect, or transmit page content — it only appends an overlay element and removes it a second later. |
+| `host_permissions: <all_urls>` | The jumpscare must be able to appear on whatever page the user is on when it fires, and which page that will be is not knowable in advance. It is used solely to place the overlay and to check whether the current tab permits it. The extension does not read, collect, or transmit page content. |
 
 **Single purpose** (Chrome requires one sentence):
 
@@ -122,32 +136,35 @@ not embellish them.
 `<all_urls>` is the permission most likely to slow review. The justification
 above is the honest one: it needs to draw anywhere, and it reads nothing.
 
+**Do not describe the overlay as an injected element.** An earlier version of
+this table told reviewers the extension "appends an overlay element and removes
+it a second later". That is not what it does: the overlay is an
+extension-origin iframe, and the distinction is load-bearing three times over
+(page CSP blocks injected media on sites like GitHub, page autoplay policy kills
+content-script audio, and host CSS leaks into injected nodes). Both stores treat
+an inaccurate disclosure as a policy violation rather than a wording slip, so
+describe the iframe.
+
 ---
 
 ## Privacy policy
 
-Chrome requires a **hosted URL**. Publish this as a GitHub Pages page or a gist
-and paste the link into the listing.
+Chrome requires a **hosted URL**. Use the one already in the repository:
 
-> **Foxy Jumpscare — Privacy Policy**
->
-> Foxy Jumpscare does not collect, store, transmit, or sell any personal
-> information.
->
-> It does not read page content. It does not track browsing history. It contains
-> no analytics, no telemetry, and no remote code. It makes no network requests of
-> any kind.
->
-> The only data it stores is your own configuration — whether the extension is
-> enabled, your chosen rarity, and a countdown value — kept locally on your
-> device using the browser's extension storage. Uninstalling the extension
-> removes it.
->
-> The `<all_urls>` host permission is required so the jumpscare overlay can be
-> displayed on whatever page you are viewing when it triggers. It is used only to
-> add a visual overlay and remove it again.
->
-> Contact: <your email>
+```
+https://github.com/VillaKeth/foxy-jumpscare/blob/main/PRIVACY.md
+```
+
+`PRIVACY.md` at the repository root is the single source of truth, shared with
+the Edge submission (`docs/publishing-edge.md`). It replaces the inline policy
+that used to sit here, which had drifted: it listed three stored keys when there
+are four (`fallbackWindow` was added in 0.1.7), and it carried a literal
+`<your email>` placeholder that would have shipped to a reviewer. Keep editing
+the one file rather than restating it per store.
+
+**The file must be committed and pushed before you submit.** Until it is, that
+URL 404s, and a privacy policy link that does not resolve is a certain rejection
+on both stores. Open it in a browser and confirm it renders — a reviewer will.
 
 Chrome's privacy tab also needs the data-use certifications ticked: no data
 collected, no sale of data, no use for creditworthiness or lending.
@@ -179,9 +196,12 @@ misleading and an obvious flag during review.
 
 1. Register at <https://chrome.google.com/webstore/devconsole> — **$5 one-time**,
    per account.
-2. New item → upload `foxy-jumpscare-chrome-v0.1.6.zip`.
+2. New item → upload `dist/packages/foxy-jumpscare-chrome-vX.Y.Z.zip` (the
+   current build; `npm run package` prints the exact path and version).
 3. Fill in the listing copy, screenshots, and the 128×128 icon (already in the
-   package).
+   package). Promotional tiles are optional but affect where the listing can be
+   surfaced — `npm run promo` writes both sizes Chrome accepts to `dist/store/`:
+   `promo-small-440x280.png` and `promo-marquee-1400x560.png`.
 4. Privacy tab: paste the hosted policy URL, tick the data-use certifications,
    and paste the single-purpose sentence and permission justifications above.
 5. Choose visibility. **Unlisted** is worth considering — reachable by direct
@@ -204,7 +224,7 @@ category, support contact) that `web-ext` has no way to supply.
    - **On this site** — the public listing.
    - **On your own** — private signing. Same as `npm run sign:firefox`; see
      `docs/install-firefox.md`.
-3. Upload `dist/packages/foxy-jumpscare-firefox-v0.1.6.zip`.
+3. Upload `dist/packages/foxy-jumpscare-firefox-vX.Y.Z.zip` (the current build).
 4. Automated validation runs `addons-linter` — the same tool as
    `npm run lint:firefox`, already clean, so this passes without comment.
 5. **Source code:** not required. The build copies plain, readable JavaScript;
