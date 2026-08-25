@@ -106,14 +106,22 @@ dotnet run --project desktop/FoxyJumpscare.Avalonia               # tray
 dotnet run --project desktop/FoxyJumpscare.Avalonia -- --settings
 dotnet run --project desktop/FoxyJumpscare.Avalonia -- --test-scare
 
+# ship it to a Windows friend -> dist/desktop/FoxyJumpscare-win-x64.zip (~90 MB)
+pwsh tools/publish-desktop-windows.ps1
+
 # ship it to a Linux friend -> dist/desktop/FoxyJumpscare-linux-x64.tar.gz
 pwsh tools/publish-desktop-linux.ps1
 ```
 
-There is no packaging script for Avalonia on Windows or macOS yet — on Windows, run the
-`dotnet build` output directly. Linux recipients need their distro's VLC libraries,
-which the tarball's INSTALL.txt lists per distro; the archive is built through WSL so
-the binary keeps its executable bit.
+There is no packaging script for macOS yet. Linux recipients need their distro's VLC
+libraries, which the tarball's INSTALL.txt lists per distro; the archive is built
+through WSL so the binary keeps its executable bit.
+
+The Windows zip carries its own libVLC, so the recipient installs nothing at all — not
+even a codec. That is most of its ~90 MB. It is the one publish path here that is *not*
+single-file: bundling pulls the 650 libVLC plugin DLLs into the exe, and self-extraction
+flattens the `plugins/` subtree that `Core.Initialize()` scans for, leaving a scare that
+initialises and plays nothing. Keep the extracted folder together.
 
 **Black background** — WPF, Windows only. The overlay is opaque by design, not a stale
 build; the transparency work landed in Avalonia and was never ported back.

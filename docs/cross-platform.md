@@ -218,6 +218,31 @@ which looks like a bug and is not one.
 `Program.cs --probe-idle` runs the platform layer with no GUI, for checking the
 per-OS idle query on a machine you cannot eyeball.
 
+## Shipping a Windows build
+
+```powershell
+pwsh tools/publish-desktop-windows.ps1   # -> dist/desktop/FoxyJumpscare-win-x64.zip
+```
+
+Self-contained twice over (~90 MB): the .NET runtime *and* libVLC are both in the
+zip, so the recipient installs nothing, not even a codec. Contrast the WPF build
+(`tools/publish-desktop.ps1`, `-black.zip`), which decodes through Media
+Foundation and therefore carries a Windows 10 "install VP9 Video Extensions"
+caveat.
+
+This is the one publish path that is **not** single-file, and the reason is
+libVLC's plugin discovery. `PublishSingleFile` with
+`IncludeNativeLibrariesForSelfExtract` sweeps every native `.dll` into the bundle
+— here that is `libvlc.dll`, `libvlccore.dll` and all 650 plugins, yielding a
+137 MB exe and a `libvlc/win-x64/` holding nothing but `hrtfs`, `lua` and two
+`.lib` import libraries. Self-extraction then lands those natives flat in a temp
+directory, so the `plugins/` subtree `Core.Initialize()` scans for is gone. The
+app starts, the overlay appears, and no video ever decodes. The script asserts
+`libvlc/win-x64/plugins` survived the publish so this cannot regress silently.
+
+`libvlc/win-x86` is pruned — the NuGet package lays down both architectures and
+the 32-bit tree is another ~99 MB that a win-x64 self-contained build cannot load.
+
 ## Shipping a Linux build
 
 ```powershell

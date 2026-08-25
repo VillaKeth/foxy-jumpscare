@@ -83,11 +83,19 @@ dotnet test  desktop/FoxyJumpscare.Core.Tests
 
 # desktop, transparent (Avalonia) — the one under active development
 dotnet run   --project desktop/FoxyJumpscare.Avalonia -- --test-scare
-pwsh tools/publish-desktop-linux.ps1  # -> FoxyJumpscare-linux-x64.tar.gz
+pwsh tools/publish-desktop-windows.ps1  # -> FoxyJumpscare-win-x64.zip
+pwsh tools/publish-desktop-linux.ps1    # -> FoxyJumpscare-linux-x64.tar.gz
 
 # desktop, black background (WPF, Windows only)
-pwsh tools/publish-desktop.ps1        # -> FoxyJumpscare-win-x64-black.zip
+pwsh tools/publish-desktop.ps1          # -> FoxyJumpscare-win-x64-black.zip
 ```
+
+Two Windows zips exist and the `-black` suffix is the only thing telling them apart:
+`FoxyJumpscare-win-x64.zip` is the Avalonia/transparent build, `-black` is WPF. The
+Avalonia one is **not** single-file, unlike the other two — `PublishSingleFile` pulls
+all 650 libVLC plugin DLLs into the bundle, and self-extraction flattens the
+`plugins/` subtree that `Core.Initialize()` scans for, so the scare plays nothing.
+The script asserts `libvlc/win-x64/plugins` survived for exactly that reason.
 
 Publish through the scripts, not raw `dotnet publish`. They copy the assets the apps
 load from disk at runtime and assert the ones whose absence degrades silently — a
