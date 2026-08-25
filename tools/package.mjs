@@ -14,10 +14,11 @@ import { fileURLToPath } from 'node:url';
 import { createZip } from './lib/zip.mjs';
 
 const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
-// opera builds the same manifest-at-root zip as the others. Opera GX is
-// Chromium, so this zip both submits to the Opera add-ons store and, unzipped,
-// is exactly what a friend points "Load unpacked" at.
-const TARGETS = ['chrome', 'firefox', 'opera'];
+// opera and edge build the same manifest-at-root zip as the others. Both are
+// Chromium, so each zip submits to its store and, unzipped, is exactly what a
+// friend points "Load unpacked" at. Edge's Partner Center wants precisely this
+// shape: a .zip with the manifest at the root - see docs/publishing-edge.md.
+const TARGETS = ['chrome', 'firefox', 'opera', 'edge'];
 
 /** Every file under dir, as archive-relative POSIX paths. */
 async function collect(dir, base = dir) {

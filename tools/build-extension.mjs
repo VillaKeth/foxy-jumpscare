@@ -4,11 +4,16 @@ import { join, dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
-// opera is byte-for-byte the chrome build: Opera (incl. Opera GX) is Chromium
-// and loads an MV3 service-worker extension unchanged. It exists as its own
-// target so "load the Opera build" is unambiguous and an Opera add-ons store
-// upload has a folder of its own, not a Chrome one relabelled by hand.
-const TARGETS = ['chrome', 'firefox', 'opera'];
+// opera and edge are byte-for-byte the chrome build: both are Chromium and
+// load an MV3 service-worker extension unchanged. They exist as their own
+// targets so "load the Opera build" is unambiguous and a store upload has a
+// folder of its own, not a Chrome one relabelled by hand.
+//
+// The two stores disagree about MV3 in opposite directions, which is why edge
+// is worth having: Microsoft Partner Center accepts *only* MV3 submissions,
+// while Opera's upload form still targets V2 and has been reported to refuse
+// V3 - see docs/publishing-opera.md. Same bytes, opposite reception.
+const TARGETS = ['chrome', 'firefox', 'opera', 'edge'];
 // A bare GUID, not an email-style id. An email-style id embeds a domain in
 // every published copy of the manifest and in AMO's public API, and an add-on
 // id can never be changed once a listing exists - so the domain would be
@@ -45,8 +50,9 @@ export function manifestFor(target, base) {
       strict_min_version: '142.0',
     };
   } else {
-    // chrome and opera are both Chromium: an MV3 service-worker background and
-    // no browser_specific_settings. Opera GX loads this manifest unchanged.
+    // chrome, opera and edge are all Chromium: an MV3 service-worker
+    // background and no browser_specific_settings. Opera GX and Edge load this
+    // manifest unchanged.
     manifest.background = { service_worker: 'background.js', type: 'module' };
   }
 

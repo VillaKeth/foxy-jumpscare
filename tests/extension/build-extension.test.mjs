@@ -23,6 +23,17 @@ describe('manifestFor', () => {
     expect(opera).toEqual(manifestFor('chrome', BASE));
   });
 
+  it('builds Edge identically to Chrome (both Chromium)', () => {
+    // Edge is Chromium, and Partner Center accepts only MV3 - so the Chrome
+    // manifest uploads unchanged. Same reasoning as Opera above: the target
+    // exists to give an Edge submission its own artifact rather than a Chrome
+    // zip renamed by hand. If these ever diverge, that assumption is dead.
+    const edge = manifestFor('edge', BASE);
+    expect(edge.background).toEqual({ service_worker: 'background.js', type: 'module' });
+    expect(edge.browser_specific_settings).toBeUndefined();
+    expect(edge).toEqual(manifestFor('chrome', BASE));
+  });
+
   it('gives Firefox a scripts background and a gecko id', () => {
     const m = manifestFor('firefox', BASE);
     expect(m.background).toEqual({ scripts: ['background.js'], type: 'module' });
@@ -65,7 +76,7 @@ describe('manifestFor', () => {
     // The toolbar popup is the primary UI - about:addons -> Preferences is
     // several clicks deep and most people never find it. Both entry points
     // load one page so the two cannot drift apart.
-    for (const target of ['chrome', 'firefox', 'opera']) {
+    for (const target of ['chrome', 'firefox', 'opera', 'edge']) {
       const m = manifestFor(target, BASE);
       expect(m.action.default_popup).toBe('panel.html');
       expect(m.action.default_popup).toBe(m.options_ui.page);
