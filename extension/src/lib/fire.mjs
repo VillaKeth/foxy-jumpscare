@@ -25,6 +25,25 @@ const FAILSAFE_MS = 8000;
  * behaviour the shipped extension has out of the box.
  */
 export async function attemptFire(browser, { allowStandaloneWindow = true } = {}) {
+  // Nothing below reaches somebody who is not looking at the browser, and two
+  // of the three paths actively intrude on whatever they ARE looking at.
+  //
+  // This used to run anyway, deliberately: the retry path can land on a tick
+  // while the whole browser sits in the background, and the reasoning was that
+  // only the standalone window reaches the screen at all then. True, and
+  // exactly the problem - "the screen" is somebody's game, call or full-screen
+  // video, and what it reaches them with is an opaque black rectangle and a
+  // scream from an app they had put away. The tab path is no better unfocused:
+  // it injects into EVERY injectable tab, so a minimised window played the
+  // scream once per open tab, all at once, from tabs nobody could see.
+  //
+  // Declining costs nothing. Reporting false leaves `remaining` at 0, so the
+  // next tick tries again and lands the moment they are back in the browser -
+  // the same bargain the standalone-window setting makes. A jumpscare is only
+  // a jumpscare where the user is; anywhere else it is an interruption.
+  const focusedWindow = await browser.windows.getLastFocused().catch(() => null);
+  if (!focusedWindow?.focused) return false;
+
   const tabs = await browser.tabs.query({});
   const targets = tabs.filter((tab) => isInjectableUrl(tab.url));
   const iframeUrl = browser.runtime.getURL('overlay.html');
@@ -53,22 +72,21 @@ export async function attemptFire(browser, { allowStandaloneWindow = true } = {}
   });
 
   // Spending the roll requires the scare to land IN FRONT of the user: the
-  // active tab of a window that actually has focus. Counting any tab was the
-  // "heard it, never saw it" bug - a fire while the active tab was restricted
-  // (addons.mozilla.org, about:*) reached only background tabs, whose audio
-  // plays from pages the user cannot see.
+  // active tab, the window having already been checked for focus above.
+  // Counting any tab was the "heard it, never saw it" bug - a fire while the
+  // active tab was restricted (addons.mozilla.org, about:*) reached only
+  // background tabs, whose audio plays from pages the user cannot see.
   const [activeTab] = await browser.tabs
     .query({ active: true, lastFocusedWindow: true })
     .catch(() => []);
-  const win = await browser.windows.getLastFocused().catch(() => null);
-  if (win?.focused && activeTab && landed.has(activeTab.id)) return true;
+  if (activeTab && landed.has(activeTab.id)) return true;
 
   // The user-facing scare has nowhere to live in a tab - the active tab is a
-  // store page, a PDF, or about:config, or no browser window has focus at
-  // all (the retry path can fire from the background). A standalone
-  // fullscreen window carries it instead; safe to lean on since 0.1.1, when
-  // the overlay page learned to tear itself down. Background-tab overlays
-  // from above still cover a tab switch mid-scream.
+  // store page, a PDF, or about:config. The user IS at the browser (checked
+  // at the top); it is only this one page that will not take the overlay. A
+  // standalone fullscreen window carries it instead; safe to lean on since
+  // 0.1.1, when the overlay page learned to tear itself down. Background-tab
+  // overlays from above still cover a tab switch mid-scream.
   //
   // That window is the one overlay that cannot be transparent - there is no
   // page behind it to composite over, so it is painted black - which makes it

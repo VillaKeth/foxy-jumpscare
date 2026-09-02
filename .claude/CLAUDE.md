@@ -27,7 +27,14 @@ If you change the math, change it in both places and in the spec.
 them out deliberately — do not add them, and do not `git add -f` them.
 
 **A failed jumpscare must not consume the roll.** If injection fails (restricted page)
-or an overlay can't be shown, leave `remaining` at 0 and retry next tick.
+or an overlay can't be shown, leave `remaining` at 0 and retry next tick. This is also
+why `attemptFire` bails before doing anything when no browser window has OS focus:
+a pending fire can land on a tick while the browser is in the background, and both
+paths intrude on whatever the user actually switched to — the standalone window puts a
+fullscreen black rectangle and a scream over a game or a call, and the tab path injects
+into *every* injectable tab, so a minimised window played the scream once per open tab
+at once, from tabs nobody could see. Declining costs nothing; the roll survives and the
+scare lands on the next tick after they come back.
 
 **The overlay always has a hard failsafe teardown.** Normal dismissal is the video's
 `ended` / `MediaEnded` event; an independent timer force-closes at video duration +

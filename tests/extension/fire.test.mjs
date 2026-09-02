@@ -184,14 +184,27 @@ describe('attemptFire', () => {
     expect(browser.windows.create).toHaveBeenCalledOnce();
   });
 
-  it('opens the standalone window when no browser window has focus', async () => {
-    // The retry path: a pending fire can land on a tick while the whole
-    // browser sits in the background. An overlay in any tab is invisible
-    // then - only the standalone window actually reaches the screen.
+  it('fires nothing at all when no browser window has focus', async () => {
+    // The retry path can land on a tick while the whole browser sits in the
+    // background, and until 0.1.11 it went ahead: it opened the standalone
+    // window, on the reasoning that an overlay in a tab is invisible then and
+    // only that window reaches the screen. It does reach the screen - and the
+    // screen belongs to whatever the user actually switched to. A fullscreen
+    // black rectangle and a scream over a game, a call or a full-screen video
+    // is the single most intrusive thing this extension can do.
+    //
+    // The tab path is not a safe consolation either, which is why this bails
+    // before injecting rather than merely declining the window: injection goes
+    // to EVERY injectable tab, so a minimised browser played the scream once
+    // per open tab, simultaneously, from tabs nobody could see.
+    //
+    // Nothing is lost by waiting. false leaves the roll unspent, so the scare
+    // arrives on the next tick after they come back.
     const browser = fakeBrowser({ focused: false });
 
-    expect(await attemptFire(browser, { allowStandaloneWindow: true })).toBe(true);
-    expect(browser.windows.create).toHaveBeenCalledOnce();
+    expect(await attemptFire(browser, { allowStandaloneWindow: true })).toBe(false);
+    expect(browser.windows.create).not.toHaveBeenCalled();
+    expect(browser.scripting.executeScript).not.toHaveBeenCalled();
   });
 
   it('does not spend the roll when nothing user-visible happened', async () => {
@@ -245,6 +258,8 @@ describe('attemptFire, standalone window switched off by the user', () => {
   });
 
   it('does not open the standalone window when no browser window has focus', async () => {
+    // Same answer with the setting off, for a different reason: an unfocused
+    // browser declines before it gets this far. See the focus test above.
     const browser = fakeBrowser({ focused: false });
 
     expect(await attemptFire(browser, { allowStandaloneWindow: false })).toBe(false);
