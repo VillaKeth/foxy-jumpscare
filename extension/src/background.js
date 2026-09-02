@@ -11,8 +11,8 @@ const IDLE_THRESHOLD_SECONDS = 15;
  *
  * Same function the install handler uses, on purpose: the running extension
  * and a freshly seeded store cannot then disagree about what a default is.
- * `fallbackWindow` in particular defaults to false here and in attemptFire's
- * signature, so neither side can drift.
+ * Every default it fills in comes from DEFAULTS in state.mjs, which panel.js
+ * reads too, so no reader of storage can invent its own.
  */
 const getState = async () => seedState(await chrome.storage.local.get(STATE_KEYS));
 

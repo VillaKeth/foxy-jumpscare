@@ -84,13 +84,19 @@ test('does not double-inject', async ({ context, worker }) => {
 });
 
 test('declines to fire when every tab is privileged and the fallback is off', async ({ context, worker }) => {
-  // The shipped default. The standalone window is the one overlay that cannot
-  // be transparent, and a fullscreen black screen is not the effect this
-  // extension is for - so with nowhere to draw, it draws nothing.
+  // Not the shipped default any more - 0.1.9 turned the fallback on - but what
+  // a user who unticks the box gets. The standalone window is the one overlay
+  // that cannot be transparent, and a fullscreen black screen is not the effect
+  // this extension is for, so with nowhere to draw it draws nothing.
   //
   // Nothing is lost by declining: reporting false leaves the roll unspent, so
   // the next tick lands transparently on the first ordinary tab opened.
-  await setState(worker, { fallbackWindow: false });
+  //
+  // fallbackChosen marks this as the user's own choice. Without it seedState
+  // treats the stored false as a default this extension wrote and replaces it
+  // with the current one, which is exactly the migration this test must not
+  // trip over.
+  await setState(worker, { fallbackWindow: false, fallbackChosen: true });
   await makeEveryTabPrivileged(context);
 
   const fired = await worker.evaluate(() => globalThis.__foxyTest.fireNow());
@@ -106,10 +112,12 @@ test('declines to fire when every tab is privileged and the fallback is off', as
 });
 
 test('opens a standalone black window when every tab is privileged and the fallback is on', async ({ context, worker }) => {
-  // Opt-in. Before the setting existed this was unconditional, which is how a
-  // user sitting on about:addons got a fullscreen black screen instead of the
-  // scare they expected.
-  await setState(worker, { fallbackWindow: true });
+  // On by default since 0.1.9. Before the setting existed it was unconditional,
+  // which is how a user sitting on about:addons got a fullscreen black screen
+  // instead of the scare they expected; 0.1.7 made it opt-in, and that turned
+  // out to mean the scare silently did nothing on PDFs, on about: pages, and on
+  // any new tab page supplied by another extension.
+  await setState(worker, { fallbackWindow: true, fallbackChosen: true });
   await makeEveryTabPrivileged(context);
 
   const fired = await worker.evaluate(() => globalThis.__foxyTest.fireNow());

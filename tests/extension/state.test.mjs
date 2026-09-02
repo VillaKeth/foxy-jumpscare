@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { seedState } from '../../extension/src/lib/state.mjs';
+import { seedState, DEFAULTS } from '../../extension/src/lib/state.mjs';
 import { DEFAULT_ONE_IN_N } from '../../extension/src/lib/roll.mjs';
 
 /** Deterministic stand-in for drawRemaining, so a fresh draw is recognisable. */
@@ -11,12 +11,24 @@ describe('seedState, on a first install', () => {
       oneInN: DEFAULT_ONE_IN_N,
       enabled: true,
       fallbackWindow: true,
+      // Nothing has been chosen yet - a fresh install has taken every default
+      // rather than picked any of them.
+      fallbackChosen: false,
       remaining: 4242,
     });
   });
 
   it('treats missing storage the same as empty storage', () => {
     expect(seedState(undefined, draw).enabled).toBe(true);
+  });
+
+  it('seeds exactly the shared defaults, so no other reader can disagree', () => {
+    // panel.js reads storage directly and has to fill in the same blanks this
+    // does. It used to carry its own copy of them, and they drifted: the panel
+    // said fallbackWindow defaulted to false a release after the seed started
+    // saying true, so the checkbox could report the opposite of the behaviour.
+    // One exported record, read by both, is what stops that recurring.
+    expect(seedState({}, draw)).toEqual({ ...DEFAULTS, remaining: 4242 });
   });
 });
 
@@ -47,12 +59,20 @@ describe('seedState, on an update', () => {
 
   it('keeps the black-window fallback switched off if the user unticked it', () => {
     // The one that actually needs ?? rather than ||: false is a real choice
-    // here, not an unset value, and every update must respect it.
-    expect(seedState({ fallbackWindow: false }, draw).fallbackWindow).toBe(false);
+    // here, not an unset value, and every update must respect it. What marks it
+    // as a choice is fallbackChosen - see the migration block below.
+    const stored = { fallbackWindow: false, fallbackChosen: true };
+    expect(seedState(stored, draw).fallbackWindow).toBe(false);
   });
 
   it('preserves a fully populated record untouched', () => {
-    const stored = { oneInN: 60, enabled: false, fallbackWindow: false, remaining: 12 };
+    const stored = {
+      oneInN: 60,
+      enabled: false,
+      fallbackWindow: false,
+      fallbackChosen: true,
+      remaining: 12,
+    };
     expect(seedState(stored, draw)).toEqual(stored);
   });
 
@@ -62,5 +82,37 @@ describe('seedState, on an update', () => {
     const seen = [];
     seedState({ oneInN: 60 }, (n) => { seen.push(n); return 1; });
     expect(seen).toEqual([60]);
+  });
+});
+
+// 0.1.7 and 0.1.8 seeded `fallbackWindow: false` themselves. 0.1.9 changed the
+// default to true - and `??` did its job and preserved the stored false, so the
+// new default reached nobody who already had the extension installed. The store
+// could not tell a value the user picked from one the extension had written for
+// them, so respecting the user's choice and applying a new default were the
+// same operation.
+//
+// `fallbackChosen` is what separates them from here on. Only the panel sets it,
+// and only when the user works the control themselves.
+
+describe('seedState, on a store that predates the choice being recorded', () => {
+  it('adopts the current default, because the stored value was never a choice', () => {
+    expect(seedState({ fallbackWindow: false }, draw).fallbackWindow).toBe(true);
+  });
+
+  it('marks it as still unchosen, so a later default can reach it too', () => {
+    expect(seedState({ fallbackWindow: false }, draw).fallbackChosen).toBe(false);
+  });
+
+  it('does not override a value once the user has actually chosen it', () => {
+    // The migration has to be a one-off. Unticking the box after it has run
+    // must stick through every subsequent update.
+    const unticked = { fallbackWindow: false, fallbackChosen: true };
+    expect(seedState(unticked, draw).fallbackWindow).toBe(false);
+  });
+
+  it('leaves a deliberate tick alone as well', () => {
+    const ticked = { fallbackWindow: true, fallbackChosen: true };
+    expect(seedState(ticked, draw).fallbackWindow).toBe(true);
   });
 });

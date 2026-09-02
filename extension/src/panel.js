@@ -1,4 +1,5 @@
-import { PRESETS, DEFAULT_ONE_IN_N, drawRemaining } from './lib/roll.mjs';
+import { PRESETS, drawRemaining } from './lib/roll.mjs';
+import { seedState, STATE_KEYS } from './lib/state.mjs';
 import { describeOdds, formatDuration } from './lib/format.mjs';
 
 const el = (id) => document.getElementById(id);
@@ -34,12 +35,19 @@ function renderRemaining(remaining) {
 }
 
 async function load() {
-  const {
-    enabled = true,
-    oneInN = DEFAULT_ONE_IN_N,
-    remaining = 0,
-    fallbackWindow = false,
-  } = await chrome.storage.local.get(['enabled', 'oneInN', 'remaining', 'fallbackWindow']);
+  // Read through seedState rather than filling in blanks here. The panel used
+  // to keep its own copy of the defaults and they drifted: it still said
+  // fallbackWindow defaulted to false a release after the seed had switched to
+  // true, so on a store missing the key the checkbox reported the opposite of
+  // what would actually happen. This also means the box shows the migrated
+  // value the moment the panel opens, rather than whatever predates it.
+  //
+  // The draw is stubbed to 0 because nothing here persists what it returns: a
+  // real draw would show the user a countdown that the extension is not
+  // actually running. `remaining` is read straight from the store instead.
+  const stored = await chrome.storage.local.get(STATE_KEYS);
+  const { enabled, oneInN, fallbackWindow } = seedState(stored, () => 0);
+  const remaining = stored.remaining ?? 0;
 
   enabledEl.checked = enabled;
   fallbackEl.checked = fallbackWindow;
@@ -77,7 +85,13 @@ enabledEl.addEventListener('change', async () => {
 });
 
 fallbackEl.addEventListener('change', async () => {
-  await chrome.storage.local.set({ fallbackWindow: fallbackEl.checked });
+  // fallbackChosen is written HERE and nowhere else. It is the record that the
+  // user worked this control themselves, which is what stops a future change of
+  // default from overriding them - see seedState.
+  await chrome.storage.local.set({
+    fallbackWindow: fallbackEl.checked,
+    fallbackChosen: true,
+  });
   statusEl.textContent = fallbackEl.checked
     ? 'Will use a black fullscreen window when there is no page.'
     : 'Will wait for an ordinary tab instead.';

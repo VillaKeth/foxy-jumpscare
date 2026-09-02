@@ -86,7 +86,7 @@ test('custom odds are accepted and rejected on their merits', async ({ context, 
 // already cover.)
 
 test('"Test it now" fires without spending the real roll', async ({ context, worker, extensionId }) => {
-  await setState(worker, { oneInN: 100_000, remaining: 42_000, fallbackWindow: true });
+  await setState(worker, { oneInN: 100_000, remaining: 42_000, fallbackWindow: true, fallbackChosen: true });
 
   const page = await context.newPage();
   await page.goto('/plain.html');
@@ -102,7 +102,7 @@ test('"Test it now" fires without spending the real roll', async ({ context, wor
 });
 
 test('"Test it now" says so rather than going black, with the fallback off', async ({ context, worker, extensionId }) => {
-  await setState(worker, { oneInN: 100_000, remaining: 42_000, fallbackWindow: false });
+  await setState(worker, { oneInN: 100_000, remaining: 42_000, fallbackWindow: false, fallbackChosen: true });
 
   const page = await context.newPage();
   await page.goto('/plain.html');
