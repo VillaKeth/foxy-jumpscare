@@ -1,6 +1,6 @@
 {
   "name": "foxy-jumpscare",
-  "version": "0.1.9",
+  "version": "0.1.10",
   "private": true,
   "type": "module",
   "scripts": {
@@ -10,7 +10,7 @@
     "test": "vitest run",
     "test:e2e": "playwright test",
     "lint:firefox": "addons-linter dist/firefox",
-    "lint:package": "addons-linter dist/packages/foxy-jumpscare-firefox-v0.1.9.zip",
+    "lint:package": "addons-linter dist/packages/foxy-jumpscare-firefox-v0.1.10.zip",
     "verify:firefox": "node tools/verify-firefox.mjs",
     "dev:firefox": "node tools/firefox-dist.mjs run",
     "sign:firefox": "node tools/firefox-dist.mjs sign",
