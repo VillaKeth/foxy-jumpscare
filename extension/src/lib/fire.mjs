@@ -44,42 +44,59 @@ export async function attemptFire(browser, { allowStandaloneWindow = true } = {}
   const focusedWindow = await browser.windows.getLastFocused().catch(() => null);
   if (!focusedWindow?.focused) return false;
 
-  const tabs = await browser.tabs.query({});
-  const targets = tabs.filter((tab) => isInjectableUrl(tab.url));
   const iframeUrl = browser.runtime.getURL('overlay.html');
+  const inject = (tabId) =>
+    browser.scripting.executeScript({
+      target: { tabId },
+      // Passed directly. An earlier version wrapped this in
+      // `new Function(source)` so document/window could be handed in as
+      // arguments; MV3 runs injected code under the extension's CSP, which
+      // has no 'unsafe-eval', and the wrapper silently evaluated to null
+      // instead of throwing. The injector reads the globals itself for that
+      // reason.
+      func: injectOverlayFn,
+      args: [iframeUrl, FAILSAFE_MS],
+    });
 
-  const results = await Promise.allSettled(
-    targets.map((tab) =>
-      browser.scripting.executeScript({
-        target: { tabId: tab.id },
-        // Passed directly. An earlier version wrapped this in
-        // `new Function(source)` so document/window could be handed in as
-        // arguments; MV3 runs injected code under the extension's CSP, which
-        // has no 'unsafe-eval', and the wrapper silently evaluated to null
-        // instead of throwing. The injector reads the globals itself for that
-        // reason.
-        func: injectOverlayFn,
-        args: [iframeUrl, FAILSAFE_MS],
-      })
-    )
-  );
+  const [[activeTab], tabs] = await Promise.all([
+    browser.tabs.query({ active: true, lastFocusedWindow: true }).catch(() => []),
+    browser.tabs.query({}).catch(() => []),
+  ]);
 
-  const landed = new Set();
-  results.forEach((r, i) => {
-    if (r.status !== 'fulfilled') return;
-    const result = r.value?.[0]?.result;
-    if (result === 'injected' || result === 'already-present') landed.add(targets[i].id);
-  });
+  // The active tab goes first and on its own, because it is the only one the
+  // user can see and the only one the decision below turns on.
+  //
+  // This used to be one Promise.allSettled over every injectable tab, awaited
+  // in full before anything else could happen. On the ordinary path that is
+  // harmless - the injections run concurrently, so the visible one is not held
+  // up by the rest. On the FALLBACK path it was the whole delay: the black
+  // window could not even begin to open until a round trip to every background
+  // tab had come back, which measured 226-245ms against 101-170ms for
+  // windows.create on its own. The scare the user is about to see must never
+  // queue behind scares nobody can.
+  const landedActive = activeTab && isInjectableUrl(activeTab.url)
+    ? inject(activeTab.id).then(
+        (r) => r?.[0]?.result === 'injected' || r?.[0]?.result === 'already-present',
+        () => false
+      )
+    : Promise.resolve(false);
+
+  // Every other tab, started now and deliberately never awaited. These cover a
+  // tab switch mid-scream, which is worth having and worth nothing if it costs
+  // the visible scare its timing. Failures are ordinary here - a tab can be
+  // navigating, discarded, or privileged - so they are swallowed rather than
+  // inspected; nothing downstream asks about them.
+  for (const tab of tabs) {
+    if (tab.id === activeTab?.id || !isInjectableUrl(tab.url)) continue;
+    inject(tab.id).catch(() => {});
+  }
 
   // Spending the roll requires the scare to land IN FRONT of the user: the
   // active tab, the window having already been checked for focus above.
   // Counting any tab was the "heard it, never saw it" bug - a fire while the
   // active tab was restricted (addons.mozilla.org, about:*) reached only
   // background tabs, whose audio plays from pages the user cannot see.
-  const [activeTab] = await browser.tabs
-    .query({ active: true, lastFocusedWindow: true })
-    .catch(() => []);
-  if (activeTab && landed.has(activeTab.id)) return true;
+  if (await landedActive) return true;
 
   // The user-facing scare has nowhere to live in a tab - the active tab is a
   // store page, a PDF, or about:config. The user IS at the browser (checked

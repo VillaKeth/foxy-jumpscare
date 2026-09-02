@@ -61,20 +61,50 @@ describe('attemptFire', () => {
   });
 
   it('succeeds when only some injections throw', async () => {
-    let call = 0;
+    // Keyed on the tab, not on call order: the active tab is injected first
+    // now, so ordinal matching would be testing the schedule rather than the
+    // behaviour. A background tab failing must not cost the visible scare.
     const browser = fakeBrowser({
       tabs: [
         { id: 1, url: 'https://a.example' },
         { id: 2, url: 'https://b.example', active: true },
       ],
-      executeScript: vi.fn(async () => {
-        call += 1;
-        if (call === 1) throw new Error('Cannot access contents');
+      executeScript: vi.fn(async ({ target }) => {
+        if (target.tabId === 1) throw new Error('Cannot access contents');
         return [{ result: 'injected' }];
       }),
     });
 
     expect(await attemptFire(browser)).toBe(true);
+    expect(browser.windows.create).not.toHaveBeenCalled();
+  });
+
+  it('does not make the standalone window wait for background tabs', async () => {
+    // The fallback path's delay was this: one Promise.allSettled over every
+    // injectable tab, awaited in full before windows.create could start.
+    // Measured 226-245ms against 101-170ms for windows.create alone.
+    //
+    // The background tab here never answers, which is the pathological version
+    // of a tab that is navigating or slow to wake. Under the old code this test
+    // hangs until the suite times out; the scare must not be hostage to it.
+    let releaseBackground;
+    const browser = fakeBrowser({
+      tabs: [
+        { id: 1, url: 'about:config', active: true },
+        { id: 2, url: 'https://slow.example' },
+      ],
+      executeScript: vi.fn(({ target }) =>
+        target.tabId === 2
+          ? new Promise((resolve) => { releaseBackground = resolve; })
+          : Promise.resolve([{ result: 'injected' }])),
+    });
+
+    expect(await attemptFire(browser, { allowStandaloneWindow: true })).toBe(true);
+    expect(browser.windows.create).toHaveBeenCalledOnce();
+    expect(browser.scripting.executeScript).toHaveBeenCalledWith(
+      expect.objectContaining({ target: { tabId: 2 } }));
+
+    releaseBackground?.([{ result: 'injected' }]);
   });
 
   it('passes the injector directly rather than through an eval wrapper', async () => {
