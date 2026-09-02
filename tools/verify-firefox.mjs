@@ -42,15 +42,60 @@ setTimeout(async () => {
   // rather than the extension.
   //
   // This used to go unnoticed: an unfocused window took the standalone-window
-  // fallback, which reported success anyway. Now that the fallback is opt-in
-  // and off by default, an unfocused window makes attemptFire report false.
+  // fallback, which reported success anyway. The fallback is on by default
+  // again, so pin the setting off below rather than relying on the default -
+  // otherwise an unfocused window quietly passes every check by opening a
+  // black standalone window instead of injecting anywhere.
   const win = await chrome.windows.getLastFocused().catch(() => null);
   if (win) await chrome.windows.update(win.id, { focused: true }).catch(() => {});
   const refocused = await chrome.windows.getLastFocused().catch(() => null);
   send({ stage: 'focus', focused: refocused?.focused ?? null });
 
+  // fallbackChosen too, or seedState reads the false as a default this
+  // extension wrote and replaces it with the current one.
+  await chrome.storage.local.set({ fallbackWindow: false, fallbackChosen: true });
+
+  // The transparency check needs a page whose colour is unmistakable, in the
+  // tab that will be captured. Everything above still runs against demo.html.
+  await chrome.tabs.create({ url: 'http://localhost:${PORT}/solid.html', active: true });
+  await new Promise((r) => setTimeout(r, 800));
+  const before = await sampleViewport();
+
   const fired = await globalThis.__foxyTest.fireNow();
   send({ stage: 'fire', fired });
+
+  // Several samples, keeping whichever caught the most on screen.
+  //
+  // One fixed sample is not reliable: the overlay has to load its own page and
+  // decode a first frame before there is anything to capture at all, and that
+  // takes anywhere from ~200ms to most of the clip depending on how warm the
+  // profile is. The same working build measured 9.5%, 4.1% and 0.1% of the
+  // viewport drawn on three consecutive runs, and the last one failed.
+  //
+  // The delay between them is not optional. A capture returns in about 50ms,
+  // so four back-to-back shots cover only ~200ms and all of them landed before
+  // the first frame - reporting 0.1% drawn on a build that was working. These
+  // are spaced to span the whole 890ms clip instead.
+  setTimeout(async () => {
+    const shots = [];
+    for (let i = 0; i < 4; i += 1) {
+      shots.push(await sampleViewport());
+      await new Promise((r) => setTimeout(r, 220));
+    }
+    const after = shots.reduce((a, b) => (b.otherPct > a.otherPct ? b : a));
+    send({
+      stage: 'composite',
+      before,
+      after,
+      // The page survived behind the overlay: every corner is still the page's
+      // own colour. An opaque frame canvas - the fullscreen-white failure -
+      // replaces these.
+      pageVisible: Boolean(after.corners) && after.corners.every(Boolean),
+      // ...and the overlay actually drew, so the check above cannot pass by the
+      // overlay never appearing at all.
+      drewPct: +(after.otherPct - before.otherPct).toFixed(1),
+    });
+  }, 260);
 
   setTimeout(async () => {
     for (const tab of await chrome.tabs.query({})) {
@@ -73,6 +118,47 @@ setTimeout(async () => {
     }
   }, 700);
 }, 7000);
+
+/**
+ * What the screen actually looks like.
+ *
+ * Everything else in this file measures the video, the iframe element, or the
+ * extension's own report of what it did - all of which stay correct while the
+ * user sees a fullscreen white rectangle, because the failure is in how Gecko
+ * paints the frame's canvas and not in anything the extension can observe about
+ * itself. Capturing the rendered tab is the only way to ask the question.
+ *
+ * OffscreenCanvas rather than a DOM canvas: this runs in the background script,
+ * which has no document to hang one off in the MV3 build.
+ */
+async function sampleViewport() {
+  const KEY = [255, 0, 255];       // solid.html's background
+  const TOLERANCE = 8;
+  try {
+    const url = await chrome.tabs.captureVisibleTab(null, { format: 'png' });
+    const bitmap = await createImageBitmap(await (await fetch(url)).blob());
+    const canvas = new OffscreenCanvas(bitmap.width, bitmap.height);
+    const ctx = canvas.getContext('2d', { willReadFrequently: true });
+    ctx.drawImage(bitmap, 0, 0);
+    const d = ctx.getImageData(0, 0, canvas.width, canvas.height).data;
+
+    const isKey = (o) => KEY.every((c, i) => Math.abs(d[o + i] - c) <= TOLERANCE);
+    let other = 0;
+    for (let i = 0; i < d.length; i += 4) if (!isKey(i)) other += 1;
+
+    const at = (x, y) => isKey(((y * canvas.width) + x) * 4);
+    const w = canvas.width - 5;
+    const h = canvas.height - 5;
+    return {
+      w: canvas.width,
+      h: canvas.height,
+      otherPct: +((100 * other) / (d.length / 4)).toFixed(1),
+      corners: [at(4, 4), at(w, 4), at(4, h), at(w, h)],
+    };
+  } catch (e) {
+    return { error: String(e).slice(0, 160), corners: null, otherPct: 0 };
+  }
+}
 `;
 
 const OVERLAY_PROBE = `
@@ -102,11 +188,28 @@ setTimeout(() => {
   post({
     stage: 'playback', muted: video.muted, paused: video.paused,
     t: Number(video.currentTime.toFixed(2)), err: video.error?.message ?? null,
+    // The trigger state for the opaque-canvas bug, reported so a green run
+    // cannot be mistaken for a run that never exercised it.
+    scheme: getComputedStyle(document.documentElement).colorScheme,
+    prefersDark: matchMedia('(prefers-color-scheme: dark)').matches,
   });
 
-  // Transparency: draw a frame and count how much of it keyed out. ffmpeg
-  // cannot decode VP9 alpha, so a browser is the only place to check, and
-  // Firefox is a separate implementation from Chromium's.
+  // Sample the alpha at a FIXED point in the clip rather than at whatever
+  // frame happens to be showing 600ms in. Foxy grows through the lunge, so how
+  // much of the frame has keyed out is a function of when you look: the same
+  // working build measured 86%, 74% and 44% clear on three consecutive runs,
+  // and the last one failed a >50% threshold. Pausing and seeking to mid-clip
+  // makes it the same frame every time - and is what the Chromium test in
+  // tests/e2e/overlay.spec.mjs already does, so the two now agree.
+  //
+  // Playback is reported above, before the pause, so the 'playing, not
+  // blocked' check still sees the real thing.
+  video.pause();
+  video.currentTime = video.duration * 0.5;
+  video.addEventListener('seeked', sampleAlpha, { once: true });
+}, 600);
+
+function sampleAlpha() {
   try {
     const c = document.createElement('canvas');
     c.width = video.videoWidth; c.height = video.videoHeight;
@@ -130,7 +233,7 @@ setTimeout(() => {
   } catch (e) {
     post({ stage: 'alpha', error: String(e).slice(0, 120) });
   }
-}, 600);
+}
 `;
 
 const reports = [];
@@ -204,6 +307,20 @@ const child = spawn(process.execPath, [
   '--firefox', firefox,
   '--start-url', `http://localhost:${PORT}/demo.html`,
   '--no-reload',
+  // Dark, because a default profile is light and the transparency bug this
+  // suite exists to catch only fires on a browser set to dark. Firefox gives
+  // an opaque canvas to a document that does not support the scheme it is
+  // shown under, so a light browser never exercises it and the composite
+  // checks below pass on a build that is fullscreen white for most users.
+  //
+  // BOTH prefs are required and they are not the same switch. The first
+  // darkens the browser chrome; the second is what content - and therefore the
+  // overlay frame - actually reads for prefers-color-scheme. Setting only the
+  // first leaves content light, which is how a whole afternoon of reproduction
+  // attempts came back green against a build that was fullscreen white on the
+  // reporter's machine. 0 is dark here, not light.
+  '--pref', 'ui.systemUsesDarkTheme=1',
+  '--pref', 'layout.css.prefers-color-scheme.content-override=0',
 ], { stdio: ['ignore', 'pipe', 'pipe'] });
 
 let webExtOutput = '';
@@ -228,7 +345,7 @@ console.log('  launching Firefox, waiting for the overlay to fire...');
  * The deadline still bounds it, so a genuinely broken build fails instead of
  * hanging.
  */
-const NEEDED = ['fire', 'video', 'playback', 'alpha'];
+const NEEDED = ['fire', 'video', 'playback', 'alpha', 'composite'];
 const haveAll = () =>
   NEEDED.every((s) => reports.some((r) => r.stage === s)) &&
   // Same tab-order reasoning as pageHit below: waiting for merely *a* 'page'
@@ -257,6 +374,13 @@ const by = (stage) => reports.find((r) => r.stage === stage);
 const pageHit = reports.find((r) => r.stage === 'page' && r.present === true);
 const anyPage = pageHit ?? by('page');
 
+// Printed, not asserted. A green run means nothing unless the run was actually
+// in the state that breaks: the overlay frame must be seeing a dark preference,
+// or the opaque-canvas failure cannot occur and the composite checks below are
+// measuring an easier browser than the one users have.
+console.log(`\n  overlay frame: color-scheme=${by('playback')?.scheme} ` +
+  `prefers-dark=${by('playback')?.prefersDark}`);
+
 console.log('\n  Firefox behavioural checks:');
 
 const ok = [
@@ -275,6 +399,19 @@ const ok = [
     by('alpha') ? `${by('alpha').clearPct}% clear, ${by('alpha').solidPct}% opaque` : 'no report'),
   check('no green fringe', (by('alpha')?.greenPct ?? 100) < 0.5,
     by('alpha') ? `${by('alpha').greenPct}% green` : 'no report'),
+
+  // The pair that has to be read together. "Page still visible" passes trivially
+  // if the overlay never drew, and "overlay drew" passes on an overlay that
+  // covered the page completely - only both at once describe a scare that
+  // composited.
+  check('overlay drew over the page', (by('composite')?.drewPct ?? 0) > 2,
+    by('composite')
+      ? `${by('composite').before.otherPct}% -> ${by('composite').after.otherPct}% not page colour`
+      : 'no report'),
+  check('page still visible behind the overlay', by('composite')?.pageVisible === true,
+    by('composite')?.after?.corners
+      ? `corners on page colour: ${by('composite').after.corners.filter(Boolean).length}/4`
+      : by('composite')?.after?.error ?? 'no report'),
 ].every(Boolean);
 
 console.log();

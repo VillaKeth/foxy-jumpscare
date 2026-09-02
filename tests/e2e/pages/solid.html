@@ -1,0 +1,19 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>solid</title>
+<!--
+  A page that exists to be looked at rather than read.
+
+  verify-firefox.mjs fires the overlay over this and then captures the rendered
+  tab. One flat, saturated colour that appears nowhere in the video makes the
+  question "is the page still there?" answerable by sampling four corner pixels:
+  the overlay letterboxes a 16:9 clip into the viewport, so the corners are
+  always page, never Foxy.
+
+  Magenta specifically because the two ways this can fail both paint something
+  else - an opaque canvas behind the frame comes out white or near-black, and a
+  keying failure leaves the clip's own black. Neither is mistakable for this.
+-->
+<style>
+  html, body { margin: 0; height: 100%; background: #ff00ff; }
+</style>
