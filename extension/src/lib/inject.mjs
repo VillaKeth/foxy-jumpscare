@@ -49,23 +49,34 @@ export function injectOverlayFn(iframeUrl, failsafeMs) {
   // inline !important rather than set as ordinary inline values.
   //
   // Transparent, so the page stays visible behind the keyed video - see the
-  // note in overlay.html. 'normal' colour-scheme stops the host from handing
-  // the frame a painted backdrop of its own.
+  // note in overlay.html.
   //
-  // Ordinary inline values were not enough. Dark Reader - a very common
-  // extension, and the way a lot of people get dark mode on sites that have
-  // none - publishes `color-scheme: dark !important`, which outranks a plain
-  // inline value. The frame's used scheme then resolves to dark while
-  // overlay.html never opts into dark itself, and Firefox paints an opaque
-  // light canvas behind the frame. The result is a FULLSCREEN WHITE backdrop
-  // with Foxy on it, instead of the page. Measured on a real page with Dark
-  // Reader in its default dynamic mode: computed colour-scheme on the frame
-  // came back "dark" despite this code setting "normal", and every sampled
-  // pixel of the viewport read rgb(255, 255, 255).
+  // `light dark` means "this frame renders correctly under either scheme",
+  // and that is the whole point. Firefox gives a document an OPAQUE canvas
+  // when the document does not support the colour scheme it is being shown
+  // under - the backdrop exists so unstyled content stays readable. The
+  // overlay has no content to make unreadable; it is one keyed video over
+  // whatever is behind it. Declaring support for both schemes is what keeps
+  // its canvas transparent no matter what the browser or the page prefers.
   //
-  // An inline !important declaration is the top of the author cascade, so it
-  // survives that. Any other page-recolouring extension gets the same answer.
-  iframe.style.setProperty('color-scheme', 'normal', 'important');
+  // This value was `normal` for one release and that was the bug. `normal`
+  // declares the opposite - "does not support dark" - so on a browser set to
+  // dark, which is the majority of this extension's users, Firefox painted
+  // the light default canvas and the scare became a FULLSCREEN WHITE
+  // rectangle with Foxy on it. Measured in a live profile on google.com:
+  // white pixels went 0.3% -> 91.3% of the viewport mid-scare, with the frame
+  // reporting `color-scheme: normal`, `background-color: rgba(0,0,0,0)` and
+  // `prefers-color-scheme: dark`. Every computed value said transparent while
+  // the screen was white, which is why this took a screen capture to find and
+  // why verify:firefox now samples rendered pixels.
+  //
+  // !important, and not an ordinary inline value, because of Dark Reader - a
+  // very common extension, and how a lot of people get dark mode on sites
+  // that lack it. It publishes `color-scheme: dark !important`, which
+  // outranks a plain inline value; the frame then inherits dark. An inline
+  // !important declaration is the top of the author cascade and survives it.
+  // Any other page-recolouring extension gets the same answer.
+  iframe.style.setProperty('color-scheme', 'light dark', 'important');
   iframe.style.setProperty('background-color', 'transparent', 'important');
 
   let timer = null;

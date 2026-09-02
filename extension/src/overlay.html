@@ -20,10 +20,23 @@
    * overlay.js detects that case and paints it black; see the note there.
    * Do not resolve the two cases by changing this line.
    */
+  /*
+   * `color-scheme` is load-bearing and is NOT cosmetic here. Firefox paints an
+   * opaque canvas behind any document that does not support the scheme it is
+   * being displayed under - so a frame that declares only light, shown in a
+   * browser set to dark, gets a white rectangle behind it and the transparency
+   * above is silently discarded. Declaring both is what keeps the canvas
+   * transparent under either. Do not narrow this to one scheme, and do not
+   * remove it because the overlay "has no colours to adapt".
+   *
+   * inject.mjs pins the same value on the iframe element, for the same reason
+   * and against page extensions that publish a scheme of their own.
+   */
   html, body {
     margin: 0;
     height: 100%;
     background: transparent;
+    color-scheme: light dark;
     overflow: hidden;
   }
   video {

@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { readFileSync } from 'node:fs';
 import { SENTINEL_ID, OVERLAY_MESSAGE, injectOverlayFn } from '../../extension/src/lib/inject.mjs';
 
 const URL_ = 'chrome-extension://abc/overlay.html';
@@ -94,22 +95,47 @@ describe('injectOverlayFn', () => {
   });
 
   it('pins colour-scheme and background as inline !important', () => {
-    // Measured against Dark Reader on a real page: it publishes
-    // `color-scheme: dark !important`, which beats an ordinary inline value.
-    // The frame's used scheme then became `dark` while overlay.html itself
-    // never opts into dark, so Firefox painted an opaque light canvas behind
-    // the frame - a fullscreen WHITE backdrop instead of the page.
+    // The VALUE is the load-bearing part, not just the priority.
     //
-    // An inline !important declaration outranks an author !important rule, so
-    // this is what survives a page-recolouring extension.
+    // Firefox gives an opaque canvas to any document that does not support the
+    // colour scheme it is being displayed under, so unstyled content stays
+    // readable. `light dark` declares support for both, which is what keeps
+    // this frame's canvas transparent whatever the browser or the page prefers.
+    //
+    // It was `normal` for one release - the opposite claim, "does not support
+    // dark" - and on a browser set to dark, which is most of them, Firefox
+    // painted the light default canvas: the scare became a fullscreen WHITE
+    // rectangle with Foxy on it. Measured live on google.com, white pixels went
+    // 0.3% -> 91.3% of the viewport mid-scare while every computed value still
+    // read `background-color: rgba(0, 0, 0, 0)`. Changing this back to `normal`
+    // or to a single scheme reintroduces that.
+    //
+    // !important because Dark Reader publishes `color-scheme: dark !important`,
+    // which beats an ordinary inline value; an inline !important declaration
+    // outranks an author !important rule and survives it.
     injectOverlayFn(URL_, 3000);
     const { style } = dom.appended[0];
 
-    expect(style.getPropertyValue('color-scheme')).toBe('normal');
+    expect(style.getPropertyValue('color-scheme')).toBe('light dark');
     expect(style.getPropertyPriority('color-scheme')).toBe('important');
 
     expect(style.getPropertyValue('background-color')).toBe('transparent');
     expect(style.getPropertyPriority('background-color')).toBe('important');
+  });
+
+  it('declares the same colour-scheme on the overlay document itself', () => {
+    // Both ends have to agree. The element value only sets what the embedded
+    // document inherits; overlay.html's own declaration is what actually
+    // decides the canvas, and either one alone leaves the other free to drift
+    // back to the value that shipped white.
+    //
+    // No harness reproduces this: the failure needs a real page in a real
+    // profile on a browser preferring dark, and verify:firefox stays green on
+    // the broken value against its own test page. This assertion is the guard
+    // instead - see docs and the note in overlay.html.
+    const html = readFileSync(
+      new URL('../../extension/src/overlay.html', import.meta.url), 'utf8');
+    expect(html).toMatch(/color-scheme:\s*light dark/);
   });
 
   it('delegates autoplay permission to the iframe', () => {

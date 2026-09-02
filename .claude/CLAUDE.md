@@ -53,6 +53,19 @@ carries its own libVLC and never depends on an OS codec.
 whatever was already on screen; an opaque backdrop turns the scare into a video
 player. The one exception is the extension's standalone fallback window, which has
 no page behind it — `overlay.js` paints that black when `window.parent === window`.
+
+**The browser overlay declares `color-scheme: light dark`, in both places.** On the
+iframe element (`inject.mjs`, inline `!important`) and on the overlay document
+(`overlay.html`). This is not cosmetic: Firefox paints an *opaque* canvas behind any
+document that does not support the scheme it is displayed under, so a frame claiming
+`normal` — "does not support dark" — on a browser set to dark gets a white rectangle,
+and the transparency above is silently discarded. 0.1.8 shipped `normal` and the scare
+became fullscreen white for dark-mode users; measured live, white went 0.3% → 91.3% of
+the viewport while every computed value still read `rgba(0, 0, 0, 0)`. Nothing an
+extension can observe about itself detects this — only sampling rendered pixels does,
+and even `verify:firefox` stays green on the broken value against its own test page.
+The guard is the pair of assertions in `tests/extension/inject.test.mjs`. Do not narrow
+the value to one scheme.
 The desktop gets its alpha from `foxy-alpha.mp4`'s right half, not from any codec
 feature: nothing in the libVLC stack can decode WebM alpha. When building that file,
 do not flatten the colour half by overlaying onto a `color=` source — it synthesises
