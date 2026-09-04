@@ -216,7 +216,7 @@ describe('attemptFire', () => {
 
   it('fires nothing at all when no browser window has focus', async () => {
     // The retry path can land on a tick while the whole browser sits in the
-    // background, and until 0.1.11 it went ahead: it opened the standalone
+    // background, and until 0.1.10 it went ahead: it opened the standalone
     // window, on the reasoning that an overlay in a tab is invisible then and
     // only that window reaches the screen. It does reach the screen - and the
     // screen belongs to whatever the user actually switched to. A fullscreen
