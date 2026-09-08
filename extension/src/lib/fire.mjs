@@ -1,5 +1,6 @@
 import { isInjectableUrl } from './ticker.mjs';
 import { injectOverlayFn } from './inject.mjs';
+import { backdropFragment } from './backdrop-shot.mjs';
 
 /**
  * Generous: the video is short, but a slow decode should not have the failsafe
@@ -118,16 +119,68 @@ export async function attemptFire(browser, { allowStandaloneWindow = true } = {}
   // the user opens. The scare arrives late rather than wrong.
   if (!allowStandaloneWindow) return false;
 
+  return openStandaloneWindow(browser, iframeUrl);
+}
+
+/**
+ * The fullscreen fallback window, opened without the corner flash.
+ *
+ * `{ state: 'fullscreen' }` on its own is the obvious spelling and it is what
+ * shipped through 0.1.10. Firefox maps the popup at its DEFAULT size first and
+ * applies fullscreen after, so a small window appears in the top-left corner
+ * for a frame or two before it expands - long enough to see, and it announces
+ * the scare before it lands, which is the one thing a jumpscare cannot afford.
+ *
+ * Creating it at explicit screen-sized bounds instead means the first size it
+ * is ever mapped at is the whole screen: there is no smaller intermediate to
+ * catch. `state` is then applied separately, because Firefox rejects the two
+ * together outright - "state: fullscreen may not be combined with left, top,
+ * width, or height". Measured, that second call costs 1-9ms, and creating this
+ * way was FASTER overall besides: 112ms against 196ms.
+ *
+ * Off-screen-then-reveal was tried and does not work: `left: -30000` is clamped
+ * straight back onto the display (it landed at 0,-48), so the window is visible
+ * wherever you put it. Building it minimized and revealing when the video is
+ * ready was also tried, and was four times WORSE - a minimized window never
+ * reaches `loadeddata` in time, so it waited out the grace period and then paid
+ * for a restore on top: 1324ms against 322ms cold.
+ *
+ * `screen` is read defensively. Firefox's MV3 background is a real page and has
+ * it; Chrome's service worker does not, and there is no synchronous substitute
+ * worth taking a dependency on. Without it this falls back to the plain
+ * fullscreen create - the corner flash is a Firefox report, and a Chrome user
+ * keeps exactly the behaviour they have today rather than a guessed geometry.
+ */
+async function openStandaloneWindow(browser, iframeUrl) {
+  // Photograph the page first, so the window can composite over it instead of
+  // replacing it with a black rectangle. Empty string means it could not be
+  // taken, and the window falls back to black exactly as before - the capture
+  // is an improvement to this path, never a requirement of it.
+  const fragment = await backdropFragment(browser);
+  const base = { url: iframeUrl + fragment, type: 'popup' };
+  const width = globalThis.screen?.width;
+  const height = globalThis.screen?.height;
+  const sized = Number.isFinite(width) && Number.isFinite(height) && width > 0 && height > 0;
+
+  let win;
   try {
-    await browser.windows.create({
-      url: iframeUrl,
-      type: 'popup',
-      state: 'fullscreen',
-    });
-    return true;
+    win = await browser.windows.create(
+      sized ? { ...base, left: 0, top: 0, width, height } : { ...base, state: 'fullscreen' }
+    );
   } catch {
     // Nothing user-visible happened - leave the roll unspent so the next
     // tick retries.
     return false;
   }
+
+  // Already fullscreen on the fallback path; nothing left to do.
+  if (!sized) return true;
+
+  // Chrome off the window. If this fails the scare is still on screen at full
+  // size, just with a title bar - worth reporting as landed rather than
+  // throwing away a roll over trim.
+  await browser.windows
+    .update(win.id, { state: 'fullscreen' })
+    .catch(() => {});
+  return true;
 }

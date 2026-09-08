@@ -1,10 +1,11 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { attemptFire } from '../../extension/src/lib/fire.mjs';
 
 function fakeBrowser({
   tabs = [{ id: 7, url: 'https://example.com', active: true }],
   executeScript,
   createWindow,
+  updateWindow,
   focused = true,
 } = {}) {
   return {
@@ -14,6 +15,7 @@ function fakeBrowser({
     scripting: { executeScript: executeScript ?? vi.fn(async () => [{ result: 'injected' }]) },
     windows: {
       create: createWindow ?? vi.fn(async () => ({ id: 1 })),
+      update: updateWindow ?? vi.fn(async () => ({ id: 1 })),
       getLastFocused: vi.fn(async () => ({ focused })),
     },
     runtime: { getURL: (p) => `chrome-extension://abc/${p}` },
@@ -141,6 +143,7 @@ describe('attemptFire', () => {
   });
 
   it('opens a standalone window when no tab will take the overlay', async () => {
+    // No `screen` under vitest, so this is the Chrome service-worker shape.
     const browser = fakeBrowser({ tabs: [{ id: 1, url: 'about:config' }] });
 
     expect(await attemptFire(browser, { allowStandaloneWindow: true })).toBe(true);
@@ -149,6 +152,75 @@ describe('attemptFire', () => {
       url: 'chrome-extension://abc/overlay.html',
       type: 'popup',
       state: 'fullscreen',
+    });
+    expect(browser.windows.update).not.toHaveBeenCalled();
+  });
+
+  // --- the window must not appear small first -------------------------------
+  //
+  // `{ state: 'fullscreen' }` alone makes Firefox map the popup at its default
+  // size and fullscreen it afterwards, so a small window shows in the top-left
+  // for a frame or two. It announces the scare before it lands. Creating at
+  // explicit screen bounds means the first size it is mapped at is already the
+  // whole screen.
+
+  describe('given a background page that can see the screen', () => {
+    beforeEach(() => {
+      vi.stubGlobal('screen', { width: 1920, height: 1080 });
+    });
+    afterEach(() => {
+      vi.unstubAllGlobals();
+    });
+
+    it('creates the window at full screen size, never at a default size', async () => {
+      const browser = fakeBrowser({ tabs: [{ id: 1, url: 'about:config' }] });
+
+      expect(await attemptFire(browser, { allowStandaloneWindow: true })).toBe(true);
+      expect(browser.windows.create).toHaveBeenCalledWith({
+        url: 'chrome-extension://abc/overlay.html',
+        type: 'popup',
+        left: 0,
+        top: 0,
+        width: 1920,
+        height: 1080,
+      });
+    });
+
+    it('does not pass state and bounds together, which Firefox rejects', async () => {
+      // "state: fullscreen may not be combined with left, top, width, or
+      // height" - the create throws outright, so the scare never opens at all.
+      const browser = fakeBrowser({ tabs: [{ id: 1, url: 'about:config' }] });
+
+      await attemptFire(browser, { allowStandaloneWindow: true });
+      expect(browser.windows.create.mock.calls[0][0]).not.toHaveProperty('state');
+    });
+
+    it('takes the chrome off with a separate update call', async () => {
+      const browser = fakeBrowser({ tabs: [{ id: 1, url: 'about:config' }] });
+
+      await attemptFire(browser, { allowStandaloneWindow: true });
+      expect(browser.windows.update).toHaveBeenCalledWith(1, { state: 'fullscreen' });
+    });
+
+    it('still counts as landed if going fullscreen fails', async () => {
+      // The scare is on screen at full size either way; it just keeps a title
+      // bar. Throwing away a roll over trim would be the worse trade.
+      const browser = fakeBrowser({
+        tabs: [{ id: 1, url: 'about:config' }],
+        updateWindow: vi.fn(async () => { throw new Error('no such window'); }),
+      });
+
+      expect(await attemptFire(browser, { allowStandaloneWindow: true })).toBe(true);
+    });
+
+    it('reports failure when the window cannot be created at all', async () => {
+      const browser = fakeBrowser({
+        tabs: [{ id: 1, url: 'about:config' }],
+        createWindow: vi.fn(async () => { throw new Error('no window'); }),
+      });
+
+      expect(await attemptFire(browser, { allowStandaloneWindow: true })).toBe(false);
+      expect(browser.windows.update).not.toHaveBeenCalled();
     });
   });
 

@@ -59,7 +59,20 @@ carries its own libVLC and never depends on an OS codec.
 **Neither overlay paints a backdrop.** Browser and desktop both composite Foxy over
 whatever was already on screen; an opaque backdrop turns the scare into a video
 player. The one exception is the extension's standalone fallback window, which has
-no page behind it — `overlay.js` paints that black when `window.parent === window`.
+no page behind it — `backdrop.js` paints that, in `<head>`, before first paint.
+
+**That window photographs the page rather than settling for black.** `executeScript`
+cannot reach pdf.js (`Missing host permission for the tab`), about: pages or AMO, but
+`tabs.captureVisibleTab` photographs all of them fine — verified against the real PDF
+viewer. `backdrop-shot.mjs` captures, works out where the viewport sat on screen, and
+hands both to `backdrop.js` in the URL fragment; the window then paints the page where
+it was and keys Foxy over it. The fragment is the channel because it is the only one a
+synchronous head script can read — storage and messaging are async, and arriving after
+first paint would show black, then the page, then Foxy, which is worse than black.
+Measured: busy page 153 KB at JPEG q60, `windows.create` accepts fragments past 2 MB,
+applied in 0ms against a first animation frame at +90ms. Needs no new permission —
+`<all_urls>` already covers it. Every failure path returns `''` and the window is black,
+as before; never let a missing screenshot cost the scare.
 
 **The browser overlay declares `color-scheme: light dark`, in both places.** On the
 iframe element (`inject.mjs`, inline `!important`) and on the overlay document
