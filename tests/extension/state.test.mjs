@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { seedState, DEFAULTS } from '../../extension/src/lib/state.mjs';
+import { seedState, DEFAULTS, STATE_KEYS } from '../../extension/src/lib/state.mjs';
 import { DEFAULT_ONE_IN_N } from '../../extension/src/lib/roll.mjs';
 
 /** Deterministic stand-in for drawRemaining, so a fresh draw is recognisable. */
@@ -14,6 +14,8 @@ describe('seedState, on a first install', () => {
       // Nothing has been chosen yet - a fresh install has taken every default
       // rather than picked any of them.
       fallbackChosen: false,
+      // One scream, from the tab you are on. Background tabs get a silent copy.
+      soundEveryTab: false,
       remaining: 4242,
     });
   });
@@ -29,6 +31,14 @@ describe('seedState, on a first install', () => {
     // saying true, so the checkbox could report the opposite of the behaviour.
     // One exported record, read by both, is what stops that recurring.
     expect(seedState({}, draw)).toEqual({ ...DEFAULTS, remaining: 4242 });
+  });
+
+  it('names every field it seeds in STATE_KEYS, so readers fetch all of them', () => {
+    // background.js and panel.js fetch exactly STATE_KEYS and hand the result
+    // to seedState. A field missing from that list is never read back from
+    // storage: the user can tick the box, and every reader still sees the
+    // default.
+    expect([...STATE_KEYS].sort()).toEqual(Object.keys(seedState({}, draw)).sort());
   });
 });
 
@@ -65,12 +75,17 @@ describe('seedState, on an update', () => {
     expect(seedState(stored, draw).fallbackWindow).toBe(false);
   });
 
+  it('keeps sound in every tab switched on if the user ticked it', () => {
+    expect(seedState({ soundEveryTab: true }, draw).soundEveryTab).toBe(true);
+  });
+
   it('preserves a fully populated record untouched', () => {
     const stored = {
       oneInN: 60,
       enabled: false,
       fallbackWindow: false,
       fallbackChosen: true,
+      soundEveryTab: true,
       remaining: 12,
     };
     expect(seedState(stored, draw)).toEqual(stored);

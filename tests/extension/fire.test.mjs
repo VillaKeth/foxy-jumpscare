@@ -22,6 +22,11 @@ function fakeBrowser({
   };
 }
 
+/** The overlay URL each tab was handed, keyed by tab id. */
+const urlsByTab = (browser) => Object.fromEntries(
+  browser.scripting.executeScript.mock.calls.map(([call]) => [call.target.tabId, call.args[0]])
+);
+
 describe('attemptFire', () => {
   it('injects into the tab and reports success', async () => {
     const browser = fakeBrowser();
@@ -382,5 +387,61 @@ describe('attemptFire, standalone window switched off by the user', () => {
 
     expect(await attemptFire(browser, { allowStandaloneWindow: false })).toBe(false);
     expect(browser.windows.create).not.toHaveBeenCalled();
+  });
+});
+
+// --- one scream, not one per tab --------------------------------------------
+//
+// Every injectable tab gets the overlay, so a tab switch mid-scream still lands
+// on Foxy - but every copy used to carry its own soundtrack. Ten open tabs was
+// ten screams a few milliseconds apart, from tabs nobody could see. Only the
+// scare in front of the user plays sound now; the rest are silent copies that
+// exist to be switched to. Anyone who wants the old chorus can switch it back
+// on in the panel.
+
+describe('attemptFire, sound', () => {
+  const AUDIBLE = 'chrome-extension://abc/overlay.html';
+  const MUTED = 'chrome-extension://abc/overlay.html?muted';
+
+  it('plays the sound only in the tab you are looking at', async () => {
+    // No options: attemptFire's own default must be the stored default in
+    // state.mjs, or a fresh install and a running extension disagree.
+    const browser = fakeBrowser({
+      tabs: [
+        { id: 1, url: 'https://a.example' },
+        { id: 2, url: 'https://b.example', active: true },
+        { id: 3, url: 'https://c.example' },
+      ],
+    });
+
+    expect(await attemptFire(browser)).toBe(true);
+    expect(urlsByTab(browser)).toEqual({ 1: MUTED, 2: AUDIBLE, 3: MUTED });
+  });
+
+  it('keeps the sound for the fallback window and mutes the tabs behind it', async () => {
+    // The path where it was worst: the window screamed, and so did every
+    // background tab, all at once.
+    const browser = fakeBrowser({
+      tabs: [
+        { id: 1, url: 'about:config', active: true },
+        { id: 2, url: 'https://b.example' },
+      ],
+    });
+
+    expect(await attemptFire(browser, { allowStandaloneWindow: true })).toBe(true);
+    expect(urlsByTab(browser)).toEqual({ 2: MUTED });
+    expect(browser.windows.create.mock.calls[0][0].url).toBe(AUDIBLE);
+  });
+
+  it('screams from every tab when the user asked for that', async () => {
+    const browser = fakeBrowser({
+      tabs: [
+        { id: 1, url: 'https://a.example' },
+        { id: 2, url: 'https://b.example', active: true },
+      ],
+    });
+
+    expect(await attemptFire(browser, { soundEveryTab: true })).toBe(true);
+    expect(urlsByTab(browser)).toEqual({ 1: AUDIBLE, 2: AUDIBLE });
   });
 });

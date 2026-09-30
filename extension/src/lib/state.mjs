@@ -40,6 +40,7 @@ export const DEFAULTS = {
   enabled: true,
   fallbackWindow: true,
   fallbackChosen: false,
+  soundEveryTab: false,
 };
 
 export function seedState(stored, draw = drawRemaining) {
@@ -65,6 +66,7 @@ export function seedState(stored, draw = drawRemaining) {
       ? current.fallbackWindow ?? DEFAULTS.fallbackWindow
       : DEFAULTS.fallbackWindow,
     fallbackChosen,
+    soundEveryTab: current.soundEveryTab ?? DEFAULTS.soundEveryTab,
     remaining: current.remaining ?? draw(oneInN),
   };
 }
@@ -75,5 +77,6 @@ export const STATE_KEYS = [
   'enabled',
   'fallbackWindow',
   'fallbackChosen',
+  'soundEveryTab',
   'remaining',
 ];

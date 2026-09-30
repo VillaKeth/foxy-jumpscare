@@ -17,6 +17,16 @@ const IDLE_THRESHOLD_SECONDS = 15;
 const getState = async () => seedState(await chrome.storage.local.get(STATE_KEYS));
 
 /**
+ * The stored settings attemptFire takes, for every path that fires: the real
+ * tick, "Test it now", and the test hook. One mapping, so a test fire cannot
+ * quietly behave more forgivingly than a real one.
+ */
+const fireOptions = (state) => ({
+  allowStandaloneWindow: state.fallbackWindow,
+  soundEveryTab: state.soundEveryTab,
+});
+
+/**
  * chrome.idle reports *system* idle, so it stays 'active' while the user works
  * in another application entirely. The focus check is what makes this mean
  * "actively browsing" rather than "awake and at the computer".
@@ -39,7 +49,7 @@ async function tick() {
   await chrome.storage.local.set({ remaining, oneInN: state.oneInN, enabled: state.enabled });
 
   if (shouldFire) {
-    const fired = await attemptFire(chrome, { allowStandaloneWindow: state.fallbackWindow });
+    const fired = await attemptFire(chrome, fireOptions(state));
     if (fired) {
       await chrome.storage.local.set({ remaining: drawRemaining(state.oneInN) });
     }
@@ -76,10 +86,10 @@ chrome.alarms.onAlarm.addListener((alarm) => {
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   if (message?.type !== 'foxy:test-fire') return undefined;
 
-  // Honours the fallback setting too, so "Test it now" shows what a real fire
-  // would do rather than a more forgiving version of it.
+  // Honours the settings too, so "Test it now" shows what a real fire would do
+  // rather than a more forgiving version of it.
   getState()
-    .then((state) => attemptFire(chrome, { allowStandaloneWindow: state.fallbackWindow }))
+    .then((state) => attemptFire(chrome, fireOptions(state)))
     .then(
       (fired) => sendResponse({ fired }),
       (err) => sendResponse({ fired: false, error: String(err) })
@@ -94,14 +104,11 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
  * tests to fire on demand instead of waiting out a week-long countdown.
  */
 globalThis.__foxyTest = {
-  // Reads the stored setting rather than taking attemptFire's default, so the
+  // Reads the stored settings rather than taking attemptFire's defaults, so the
   // hook fires the same way a real tick would. A hook that always declined the
   // fallback could not exercise it at all; one that always allowed it would
   // report a scare the shipped default would never show.
-  fireNow: async () => {
-    const { fallbackWindow } = await getState();
-    return attemptFire(chrome, { allowStandaloneWindow: fallbackWindow });
-  },
+  fireNow: async () => attemptFire(chrome, fireOptions(await getState())),
   setRemaining: (remaining) => chrome.storage.local.set({ remaining }),
   tickNow: () => tick(),
 };

@@ -47,6 +47,11 @@ video.addEventListener('loadedmetadata', () => {
 video.addEventListener('ended', done);
 video.addEventListener('error', done);
 
+// A copy in a background tab, there only in case the user switches to it
+// mid-scare. The scream is already playing from the tab they were on - see
+// fire.mjs - and a second one from here would be one more voice in a chorus.
+if (new URLSearchParams(location.search).has('muted')) video.muted = true;
+
 // Autoplay can still be refused (no user gesture, extreme settings). Fall back
 // to muted playback rather than showing nothing - a silent Foxy beats no Foxy.
 //

@@ -73,7 +73,9 @@ inspection.
   background script is throttled and would silently bias the odds. Pure
   arithmetic, no browser APIs.
 - `lib/fire.mjs` — when the countdown reaches zero, injects the overlay into
-  every open tab it is permitted to touch.
+  every open tab it is permitted to touch. Only the tab the user is looking at
+  plays sound; the rest are muted copies, unless the user switches on "Scream
+  from every open tab" in the panel.
 - `lib/inject.mjs` — the injected function. Appends one `<iframe>` pointing at
   the extension's own `overlay.html` and nothing else.
 - `overlay.html` / `overlay.js` — plays the video, then removes itself. There

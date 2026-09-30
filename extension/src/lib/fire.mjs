@@ -16,16 +16,21 @@ const FAILSAFE_MS = 8000;
  * it.
  *
  * Every injectable tab in every window gets the overlay, not just the active
- * one. Scoping it to the active tab meant the scare silently did nothing
- * whenever you happened to be sitting on a restricted page, and it did not
- * follow you if you switched tabs while it was up.
+ * one, so the scare follows you if you switch tabs while it is up. Only the
+ * one in front of the user makes a sound. Every copy used to carry its own
+ * soundtrack, so ten open tabs was ten screams a few milliseconds apart, from
+ * tabs nobody could see. The copies in background tabs are muted now unless
+ * `soundEveryTab` asks for the old chorus back.
  *
  * `allowStandaloneWindow` governs the fallback at the bottom of this function
- * and nothing else. It defaults to true, matching the stored setting's default
- * in state.mjs, so the two cannot drift apart: pass nothing and you get the
+ * and nothing else. Both options default to their stored settings' defaults in
+ * state.mjs, so the two cannot drift apart: pass nothing and you get the
  * behaviour the shipped extension has out of the box.
  */
-export async function attemptFire(browser, { allowStandaloneWindow = true } = {}) {
+export async function attemptFire(
+  browser,
+  { allowStandaloneWindow = true, soundEveryTab = false } = {}
+) {
   // Nothing below reaches somebody who is not looking at the browser, and two
   // of the three paths actively intrude on whatever they ARE looking at.
   //
@@ -36,7 +41,10 @@ export async function attemptFire(browser, { allowStandaloneWindow = true } = {}
   // video, and what it reaches them with is an opaque black rectangle and a
   // scream from an app they had put away. The tab path is no better unfocused:
   // it injects into EVERY injectable tab, so a minimised window played the
-  // scream once per open tab, all at once, from tabs nobody could see.
+  // scream once per open tab, all at once, from tabs nobody could see. The
+  // background copies are muted by default now, but even one scream from a
+  // browser nobody is looking at is the same intrusion - and with
+  // `soundEveryTab` on, it is still the whole chorus.
   //
   // Declining costs nothing. Reporting false leaves `remaining` at 0, so the
   // next tick tries again and lands the moment they are back in the browser -
@@ -46,7 +54,9 @@ export async function attemptFire(browser, { allowStandaloneWindow = true } = {}
   if (!focusedWindow?.focused) return false;
 
   const iframeUrl = browser.runtime.getURL('overlay.html');
-  const inject = (tabId) =>
+  // overlay.js reads the flag and mutes before it calls play().
+  const backgroundUrl = soundEveryTab ? iframeUrl : `${iframeUrl}?muted`;
+  const inject = (tabId, url) =>
     browser.scripting.executeScript({
       target: { tabId },
       // Passed directly. An earlier version wrapped this in
@@ -56,7 +66,7 @@ export async function attemptFire(browser, { allowStandaloneWindow = true } = {}
       // instead of throwing. The injector reads the globals itself for that
       // reason.
       func: injectOverlayFn,
-      args: [iframeUrl, FAILSAFE_MS],
+      args: [url, FAILSAFE_MS],
     });
 
   const [[activeTab], tabs] = await Promise.all([
@@ -76,7 +86,7 @@ export async function attemptFire(browser, { allowStandaloneWindow = true } = {}
   // windows.create on its own. The scare the user is about to see must never
   // queue behind scares nobody can.
   const landedActive = activeTab && isInjectableUrl(activeTab.url)
-    ? inject(activeTab.id).then(
+    ? inject(activeTab.id, iframeUrl).then(
         (r) => r?.[0]?.result === 'injected' || r?.[0]?.result === 'already-present',
         () => false
       )
@@ -84,12 +94,14 @@ export async function attemptFire(browser, { allowStandaloneWindow = true } = {}
 
   // Every other tab, started now and deliberately never awaited. These cover a
   // tab switch mid-scream, which is worth having and worth nothing if it costs
-  // the visible scare its timing. Failures are ordinary here - a tab can be
+  // the visible scare its timing. They are silent by default: the scream is
+  // already playing from the tab the user was on, and background audio keeps
+  // going after a switch. Failures are ordinary here - a tab can be
   // navigating, discarded, or privileged - so they are swallowed rather than
   // inspected; nothing downstream asks about them.
   for (const tab of tabs) {
     if (tab.id === activeTab?.id || !isInjectableUrl(tab.url)) continue;
-    inject(tab.id).catch(() => {});
+    inject(tab.id, backgroundUrl).catch(() => {});
   }
 
   // Spending the roll requires the scare to land IN FRONT of the user: the

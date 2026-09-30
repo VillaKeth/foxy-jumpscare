@@ -47,5 +47,10 @@
     object-fit: contain;
   }
 </style>
-<video id="foxy" src="foxy.webm" autoplay playsinline></video>
+<!--
+  No autoplay attribute: overlay.js starts playback itself, after deciding
+  whether this copy is a muted one for a background tab. With autoplay the
+  browser could start it - sound and all - before that script has run.
+-->
+<video id="foxy" src="foxy.webm" playsinline></video>
 <script src="overlay.js" type="module"></script>

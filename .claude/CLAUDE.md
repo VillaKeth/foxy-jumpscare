@@ -36,6 +36,13 @@ into *every* injectable tab, so a minimised window played the scream once per op
 at once, from tabs nobody could see. Declining costs nothing; the roll survives and the
 scare lands on the next tick after they come back.
 
+**One scream per scare.** Every injectable tab gets the overlay, so it follows a tab
+switch, but only the active tab's copy (or the fallback's) has sound — background copies
+load `overlay.html?muted`. Ten tabs used to be ten screams a few ms apart. The panel's
+"Scream from every open tab" (`soundEveryTab`, default off) brings the chorus back.
+`overlay.html`'s `<video>` has no `autoplay` attribute on purpose: `overlay.js` must set
+`muted` before anything starts playing, and `autoplay` could beat it.
+
 **The overlay always has a hard failsafe teardown.** Normal dismissal is the video's
 `ended` / `MediaEnded` event; an independent timer force-closes at video duration +
 1.5s regardless of media state. A video that fails to decode never raises `ended`.

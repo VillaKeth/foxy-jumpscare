@@ -73,6 +73,41 @@ test('fires across every tab, not just the active one', async ({ context, worker
   await expect(c.locator(SENTINEL)).toBeAttached();
 });
 
+/** The overlay's own <video>, reached through the extension-origin iframe. */
+const overlayVideo = (page) => page.frameLocator(SENTINEL).locator('#foxy');
+
+test('only the tab you are on makes a sound', async ({ context, worker }) => {
+  // Every tab still gets Foxy, so he is there if you switch mid-scream - but
+  // every copy used to scream too, and ten open tabs was a ten-part chorus
+  // from tabs nobody could see.
+  const background = await context.newPage();
+  await background.goto('/plain.html');
+  const front = await context.newPage();
+  await front.goto('/demo.html');
+  await front.bringToFront();
+
+  expect(await worker.evaluate(() => globalThis.__foxyTest.fireNow())).toBe(true);
+
+  await expect.poll(() => overlayVideo(background).evaluate((v) => v.muted)).toBe(true);
+  await expect.poll(() => overlayVideo(front).evaluate((v) => v.muted)).toBe(false);
+  // And it actually plays. The <video> has no autoplay attribute - overlay.js
+  // must decide muted-or-not before anything starts - so play() is all there is.
+  await expect.poll(() => overlayVideo(front).evaluate((v) => v.currentTime)).toBeGreaterThan(0);
+});
+
+test('every tab screams when the user asked for that', async ({ context, worker }) => {
+  await setState(worker, { soundEveryTab: true });
+  const background = await context.newPage();
+  await background.goto('/plain.html');
+  const front = await context.newPage();
+  await front.goto('/demo.html');
+  await front.bringToFront();
+
+  expect(await worker.evaluate(() => globalThis.__foxyTest.fireNow())).toBe(true);
+
+  await expect.poll(() => overlayVideo(background).evaluate((v) => v.muted)).toBe(false);
+});
+
 test('does not double-inject', async ({ context, worker }) => {
   const page = await context.newPage();
   await page.goto('/plain.html');

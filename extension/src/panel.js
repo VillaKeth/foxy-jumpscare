@@ -12,6 +12,7 @@ const noteEl = el('odds-note');
 const statusEl = el('status');
 const testEl = el('test');
 const fallbackEl = el('fallback');
+const soundEl = el('sound-every-tab');
 
 const presetNameFor = (oneInN) =>
   Object.keys(PRESETS).find((k) => PRESETS[k] === oneInN) ?? 'custom';
@@ -46,11 +47,12 @@ async function load() {
   // real draw would show the user a countdown that the extension is not
   // actually running. `remaining` is read straight from the store instead.
   const stored = await chrome.storage.local.get(STATE_KEYS);
-  const { enabled, oneInN, fallbackWindow } = seedState(stored, () => 0);
+  const { enabled, oneInN, fallbackWindow, soundEveryTab } = seedState(stored, () => 0);
   const remaining = stored.remaining ?? 0;
 
   enabledEl.checked = enabled;
   fallbackEl.checked = fallbackWindow;
+  soundEl.checked = soundEveryTab;
   oddsEl.value = presetNameFor(oneInN);
   customEl.value = String(oneInN);
   customFieldEl.classList.toggle('hidden', oddsEl.value !== 'custom');
@@ -95,6 +97,13 @@ fallbackEl.addEventListener('change', async () => {
   statusEl.textContent = fallbackEl.checked
     ? 'Will use a black fullscreen window when there is no page.'
     : 'Will wait for an ordinary tab instead.';
+});
+
+soundEl.addEventListener('change', async () => {
+  await chrome.storage.local.set({ soundEveryTab: soundEl.checked });
+  statusEl.textContent = soundEl.checked
+    ? 'Every open tab will scream.'
+    : 'Only the tab you are on will scream.';
 });
 
 oddsEl.addEventListener('change', () => {

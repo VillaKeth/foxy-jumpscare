@@ -4,7 +4,7 @@ const SENTINEL = '#foxy-jumpscare-overlay';
 
 const readState = (worker) =>
   worker.evaluate(() =>
-    chrome.storage.local.get(['enabled', 'oneInN', 'remaining', 'fallbackWindow']));
+    chrome.storage.local.get(['enabled', 'oneInN', 'remaining', 'fallbackWindow', 'soundEveryTab']));
 
 /**
  * Seed storage, once the extension has finished seeding it itself.
@@ -131,4 +131,15 @@ test('the fallback checkbox is on by default and persists when unticked', async 
   await expect(panel.locator('#status'))
     .toHaveText('Will wait for an ordinary tab instead.');
   expect((await readState(worker)).fallbackWindow).toBe(false);
+});
+
+test('the every-tab sound checkbox is off by default and persists when ticked', async ({ context, worker, extensionId }) => {
+  await setState(worker, { oneInN: 100_000, remaining: 90_061 });
+
+  const panel = await openPanel(context, extensionId);
+  await expect(panel.locator('#sound-every-tab')).not.toBeChecked();
+
+  await panel.locator('#sound-every-tab').check();
+  await expect(panel.locator('#status')).toHaveText('Every open tab will scream.');
+  expect((await readState(worker)).soundEveryTab).toBe(true);
 });

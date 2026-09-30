@@ -9,7 +9,8 @@ Port the Terraria "Foxy jumpscare" mod out of the game and onto the whole comput
 Two deliverables sharing one asset pack and one roll algorithm:
 
 1. **Browser extension** — MV3, published to the Chrome Web Store and Firefox AMO.
-   Fires inside the active tab.
+   Fires inside the active tab, with muted copies in every other tab so it
+   follows a tab switch. One audible stream, as on the desktop.
 2. **Windows desktop app** — C# .NET 8 tray app. Fires over whatever you're doing,
    regardless of application.
 
