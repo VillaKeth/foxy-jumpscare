@@ -107,6 +107,16 @@ test('"Test it now" says so rather than opening a scare tab, with the fallback o
   const page = await context.newPage();
   await page.goto('/plain.html');
 
+  // Watched from before the click. This copy is in a background tab that
+  // nothing waits on: it plays its clip and removes itself about a second
+  // later, and on a loaded machine that was sometimes before a check made
+  // afterwards got to look.
+  await page.evaluate((sentinel) => {
+    new MutationObserver(() => {
+      if (document.querySelector(sentinel)) window.foxyOverlaySeen = true;
+    }).observe(document.documentElement, { childList: true, subtree: true });
+  }, SENTINEL);
+
   const panel = await openPanel(context, extensionId);
   await panel.locator('#test').click();
 
@@ -115,7 +125,7 @@ test('"Test it now" says so rather than opening a scare tab, with the fallback o
 
   // The background tab still took the overlay, so a tab switch mid-scream is
   // covered. It just does not count as the user having seen it.
-  await expect(page.locator(SENTINEL)).toBeAttached();
+  await expect.poll(() => page.evaluate(() => window.foxyOverlaySeen === true)).toBe(true);
   expect((await readState(worker)).remaining).toBe(42_000);
 });
 
