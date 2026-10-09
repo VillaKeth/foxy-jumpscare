@@ -1,26 +1,34 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { attemptFire } from '../../extension/src/lib/fire.mjs';
 
+/** A tab of one window, with the fields the scare tab is placed by. */
+const tab = (id, url, extra = {}) => ({ id, url, index: id - 1, windowId: 1, height: 600, ...extra });
+
 function fakeBrowser({
-  tabs = [{ id: 7, url: 'https://example.com', active: true }],
+  tabs = [tab(7, 'https://example.com', { active: true })],
   executeScript,
-  createWindow,
-  updateWindow,
+  createTab,
   focused = true,
 } = {}) {
   return {
-    // The real query with { active: true, lastFocusedWindow: true } narrows to
-    // the focused window's active tab; this fake models one window.
-    tabs: { query: vi.fn(async (q = {}) => (q.active ? tabs.filter((t) => t.active) : tabs)) },
-    scripting: { executeScript: executeScript ?? vi.fn(async () => [{ result: 'injected' }]) },
-    windows: {
-      create: createWindow ?? vi.fn(async () => ({ id: 1 })),
-      update: updateWindow ?? vi.fn(async () => ({ id: 1 })),
-      getLastFocused: vi.fn(async () => ({ focused })),
+    tabs: {
+      // The real query with { active: true, lastFocusedWindow: true } narrows to
+      // the focused window's active tab; this fake models one window.
+      query: vi.fn(async (q = {}) => (q.active ? tabs.filter((t) => t.active) : tabs)),
+      create: createTab ?? vi.fn(async (props) => ({ id: 99, ...props })),
+      get: vi.fn(async (id) => ({ id, active: true })),
+      update: vi.fn(async (id) => ({ id })),
+      remove: vi.fn(async () => {}),
+      onUpdated: { addListener: () => {}, removeListener: () => {} },
     },
+    scripting: { executeScript: executeScript ?? vi.fn(async () => [{ result: 'injected' }]) },
+    windows: { getLastFocused: vi.fn(async () => ({ focused })) },
     runtime: { getURL: (p) => `chrome-extension://abc/${p}` },
   };
 }
+
+/** The URL the scare tab was opened with, if one was. */
+const scareTabUrl = (browser) => new URL(browser.tabs.create.mock.calls[0][0].url);
 
 /** The overlay URL each tab was handed, keyed by tab id. */
 const urlsByTab = (browser) => Object.fromEntries(
@@ -40,9 +48,9 @@ describe('attemptFire', () => {
     // were sitting on a restricted page, and did not follow a tab switch.
     const browser = fakeBrowser({
       tabs: [
-        { id: 1, url: 'https://a.example', active: true },
-        { id: 2, url: 'https://b.example' },
-        { id: 3, url: 'https://c.example' },
+        tab(1, 'https://a.example', { active: true }),
+        tab(2, 'https://b.example'),
+        tab(3, 'https://c.example'),
       ],
     });
 
@@ -55,16 +63,16 @@ describe('attemptFire', () => {
   it('skips privileged tabs but still fires into the rest', async () => {
     const browser = fakeBrowser({
       tabs: [
-        { id: 1, url: 'about:config' },
-        { id: 2, url: 'https://ok.example', active: true },
-        { id: 3, url: 'https://addons.mozilla.org/x' },
+        tab(1, 'about:config'),
+        tab(2, 'https://ok.example', { active: true }),
+        tab(3, 'https://addons.mozilla.org/x'),
       ],
     });
 
     expect(await attemptFire(browser)).toBe(true);
     expect(browser.scripting.executeScript).toHaveBeenCalledOnce();
     expect(browser.scripting.executeScript.mock.calls[0][0].target).toEqual({ tabId: 2 });
-    expect(browser.windows.create).not.toHaveBeenCalled();
+    expect(browser.tabs.create).not.toHaveBeenCalled();
   });
 
   it('succeeds when only some injections throw', async () => {
@@ -73,8 +81,8 @@ describe('attemptFire', () => {
     // behaviour. A background tab failing must not cost the visible scare.
     const browser = fakeBrowser({
       tabs: [
-        { id: 1, url: 'https://a.example' },
-        { id: 2, url: 'https://b.example', active: true },
+        tab(1, 'https://a.example'),
+        tab(2, 'https://b.example', { active: true }),
       ],
       executeScript: vi.fn(async ({ target }) => {
         if (target.tabId === 1) throw new Error('Cannot access contents');
@@ -83,13 +91,13 @@ describe('attemptFire', () => {
     });
 
     expect(await attemptFire(browser)).toBe(true);
-    expect(browser.windows.create).not.toHaveBeenCalled();
+    expect(browser.tabs.create).not.toHaveBeenCalled();
   });
 
-  it('does not make the standalone window wait for background tabs', async () => {
+  it('does not make the scare tab wait for background tabs', async () => {
     // The fallback path's delay was this: one Promise.allSettled over every
-    // injectable tab, awaited in full before windows.create could start.
-    // Measured 226-245ms against 101-170ms for windows.create alone.
+    // injectable tab, awaited in full before the fallback could even start.
+    // Measured 226-245ms against 101-170ms for the fallback alone.
     //
     // The background tab here never answers, which is the pathological version
     // of a tab that is navigating or slow to wake. Under the old code this test
@@ -97,8 +105,8 @@ describe('attemptFire', () => {
     let releaseBackground;
     const browser = fakeBrowser({
       tabs: [
-        { id: 1, url: 'about:config', active: true },
-        { id: 2, url: 'https://slow.example' },
+        tab(1, 'about:config', { active: true }),
+        tab(2, 'https://slow.example'),
       ],
       executeScript: vi.fn(({ target }) =>
         target.tabId === 2
@@ -106,8 +114,8 @@ describe('attemptFire', () => {
           : Promise.resolve([{ result: 'injected' }])),
     });
 
-    expect(await attemptFire(browser, { allowStandaloneWindow: true })).toBe(true);
-    expect(browser.windows.create).toHaveBeenCalledOnce();
+    expect(await attemptFire(browser, { allowFallback: true })).toBe(true);
+    expect(browser.tabs.create).toHaveBeenCalledOnce();
     expect(browser.scripting.executeScript).toHaveBeenCalledWith(
       expect.objectContaining({ target: { tabId: 2 } }));
 
@@ -137,114 +145,54 @@ describe('attemptFire', () => {
   // behaviour each test is pinning. Switching it off is covered by its own
   // describe block at the bottom of this file.
 
-  it('opens the standalone window by default, with no options passed', async () => {
+  it('opens the scare tab by default, with no options passed', async () => {
     // The shipped default. attemptFire's own default has to match the stored
     // one in state.mjs, or the running extension and a freshly seeded store
     // disagree about what happens on a restricted tab.
-    const browser = fakeBrowser({ tabs: [{ id: 1, url: 'about:config' }] });
+    const browser = fakeBrowser({ tabs: [tab(1, 'about:config', { active: true })] });
 
     expect(await attemptFire(browser)).toBe(true);
-    expect(browser.windows.create).toHaveBeenCalledOnce();
+    expect(browser.tabs.create).toHaveBeenCalledOnce();
   });
 
-  it('opens a standalone window when no tab will take the overlay', async () => {
-    // No `screen` under vitest, so this is the Chrome service-worker shape.
-    const browser = fakeBrowser({ tabs: [{ id: 1, url: 'about:config' }] });
-
-    expect(await attemptFire(browser, { allowStandaloneWindow: true })).toBe(true);
-    expect(browser.scripting.executeScript).not.toHaveBeenCalled();
-    expect(browser.windows.create).toHaveBeenCalledWith({
-      url: 'chrome-extension://abc/overlay.html',
-      type: 'popup',
-      state: 'fullscreen',
+  it('opens the scare in a tab beside the page when the page will not take the overlay', async () => {
+    // Not a fullscreen window: that blacked out the tab strip, the toolbar and
+    // the taskbar for the length of the scare. A tab replaces only the page.
+    const browser = fakeBrowser({
+      tabs: [tab(1, 'https://a.example'), tab(2, 'about:config', { active: true })],
     });
-    expect(browser.windows.update).not.toHaveBeenCalled();
+
+    expect(await attemptFire(browser, { allowFallback: true })).toBe(true);
+    expect(browser.tabs.create.mock.calls[0][0]).toMatchObject({
+      windowId: 1, index: 2, openerTabId: 2, active: true,
+    });
+    expect(scareTabUrl(browser).pathname).toBe('/overlay.html');
+    expect(scareTabUrl(browser).searchParams.has('scare')).toBe(true);
   });
 
-  // --- the window must not appear small first -------------------------------
-  //
-  // `{ state: 'fullscreen' }` alone makes Firefox map the popup at its default
-  // size and fullscreen it afterwards, so a small window shows in the top-left
-  // for a frame or two. It announces the scare before it lands. Creating at
-  // explicit screen bounds means the first size it is mapped at is already the
-  // whole screen.
-
-  describe('given a background page that can see the screen', () => {
-    beforeEach(() => {
-      vi.stubGlobal('screen', { width: 1920, height: 1080 });
-    });
-    afterEach(() => {
-      vi.unstubAllGlobals();
-    });
-
-    it('creates the window at full screen size, never at a default size', async () => {
-      const browser = fakeBrowser({ tabs: [{ id: 1, url: 'about:config' }] });
-
-      expect(await attemptFire(browser, { allowStandaloneWindow: true })).toBe(true);
-      expect(browser.windows.create).toHaveBeenCalledWith({
-        url: 'chrome-extension://abc/overlay.html',
-        type: 'popup',
-        left: 0,
-        top: 0,
-        width: 1920,
-        height: 1080,
-      });
-    });
-
-    it('does not pass state and bounds together, which Firefox rejects', async () => {
-      // "state: fullscreen may not be combined with left, top, width, or
-      // height" - the create throws outright, so the scare never opens at all.
-      const browser = fakeBrowser({ tabs: [{ id: 1, url: 'about:config' }] });
-
-      await attemptFire(browser, { allowStandaloneWindow: true });
-      expect(browser.windows.create.mock.calls[0][0]).not.toHaveProperty('state');
-    });
-
-    it('takes the chrome off with a separate update call', async () => {
-      const browser = fakeBrowser({ tabs: [{ id: 1, url: 'about:config' }] });
-
-      await attemptFire(browser, { allowStandaloneWindow: true });
-      expect(browser.windows.update).toHaveBeenCalledWith(1, { state: 'fullscreen' });
-    });
-
-    it('still counts as landed if going fullscreen fails', async () => {
-      // The scare is on screen at full size either way; it just keeps a title
-      // bar. Throwing away a roll over trim would be the worse trade.
-      const browser = fakeBrowser({
-        tabs: [{ id: 1, url: 'about:config' }],
-        updateWindow: vi.fn(async () => { throw new Error('no such window'); }),
-      });
-
-      expect(await attemptFire(browser, { allowStandaloneWindow: true })).toBe(true);
-    });
-
-    it('reports failure when the window cannot be created at all', async () => {
-      const browser = fakeBrowser({
-        tabs: [{ id: 1, url: 'about:config' }],
-        createWindow: vi.fn(async () => { throw new Error('no window'); }),
-      });
-
-      expect(await attemptFire(browser, { allowStandaloneWindow: true })).toBe(false);
-      expect(browser.windows.update).not.toHaveBeenCalled();
-    });
-  });
-
-  it('falls back to a window when every injection fails', async () => {
+  it('falls back to a scare tab when injecting into the page fails', async () => {
     const browser = fakeBrowser({
       executeScript: vi.fn(async () => { throw new Error('nope'); }),
     });
 
-    expect(await attemptFire(browser, { allowStandaloneWindow: true })).toBe(true);
-    expect(browser.windows.create).toHaveBeenCalledOnce();
+    expect(await attemptFire(browser, { allowFallback: true })).toBe(true);
+    expect(browser.tabs.create).toHaveBeenCalledOnce();
   });
 
-  it('reports failure when there are no tabs at all and no window can open', async () => {
+  it('reports failure when there is no tab to open the scare beside', async () => {
+    const browser = fakeBrowser({ tabs: [] });
+
+    expect(await attemptFire(browser, { allowFallback: true })).toBe(false);
+    expect(browser.tabs.create).not.toHaveBeenCalled();
+  });
+
+  it('reports failure when the scare tab cannot be opened', async () => {
     const browser = fakeBrowser({
-      tabs: [],
-      createWindow: vi.fn(async () => { throw new Error('no window'); }),
+      tabs: [tab(1, 'about:config', { active: true })],
+      createTab: vi.fn(async () => { throw new Error('no tab'); }),
     });
 
-    expect(await attemptFire(browser, { allowStandaloneWindow: true })).toBe(false);
+    expect(await attemptFire(browser, { allowFallback: true })).toBe(false);
   });
 
   it('treats an already-present overlay as success', async () => {
@@ -260,26 +208,26 @@ describe('attemptFire', () => {
   // the overlay only in background tabs, whose audio plays from tabs the user
   // cannot see. Background-tab injections alone must not count as fired.
 
-  it('opens the standalone window when the ACTIVE tab is restricted, even though background tabs took the overlay', async () => {
+  it('opens the scare tab when the ACTIVE tab is restricted, even though background tabs took the overlay', async () => {
     const browser = fakeBrowser({
       tabs: [
-        { id: 1, url: 'https://addons.mozilla.org/x', active: true },
-        { id: 2, url: 'https://ok.example' },
+        tab(1, 'https://addons.mozilla.org/x', { active: true }),
+        tab(2, 'https://ok.example'),
       ],
     });
 
-    expect(await attemptFire(browser, { allowStandaloneWindow: true })).toBe(true);
+    expect(await attemptFire(browser, { allowFallback: true })).toBe(true);
     // background tab still gets it, so the scare follows a tab switch
     expect(browser.scripting.executeScript).toHaveBeenCalledOnce();
     expect(browser.scripting.executeScript.mock.calls[0][0].target).toEqual({ tabId: 2 });
-    expect(browser.windows.create).toHaveBeenCalledOnce();
+    expect(browser.tabs.create).toHaveBeenCalledOnce();
   });
 
-  it('opens the standalone window when injection into the active tab fails', async () => {
+  it('opens the scare tab when injection into the active tab fails', async () => {
     const browser = fakeBrowser({
       tabs: [
-        { id: 1, url: 'https://a.example', active: true },
-        { id: 2, url: 'https://b.example' },
+        tab(1, 'https://a.example', { active: true }),
+        tab(2, 'https://b.example'),
       ],
       executeScript: vi.fn(async ({ target }) => {
         if (target.tabId === 1) throw new Error('tab is navigating');
@@ -287,21 +235,22 @@ describe('attemptFire', () => {
       }),
     });
 
-    expect(await attemptFire(browser, { allowStandaloneWindow: true })).toBe(true);
-    expect(browser.windows.create).toHaveBeenCalledOnce();
+    expect(await attemptFire(browser, { allowFallback: true })).toBe(true);
+    expect(browser.tabs.create).toHaveBeenCalledOnce();
   });
 
   it('fires nothing at all when no browser window has focus', async () => {
     // The retry path can land on a tick while the whole browser sits in the
-    // background, and until 0.1.10 it went ahead: it opened the standalone
-    // window, on the reasoning that an overlay in a tab is invisible then and
-    // only that window reaches the screen. It does reach the screen - and the
-    // screen belongs to whatever the user actually switched to. A fullscreen
-    // black rectangle and a scream over a game, a call or a full-screen video
-    // is the single most intrusive thing this extension can do.
+    // background, and until 0.1.10 it went ahead: it opened the fallback - a
+    // fullscreen window then - on the reasoning that an overlay in a tab is
+    // invisible then and only that window reaches the screen. It does reach the
+    // screen - and the screen belongs to whatever the user actually switched
+    // to. A fullscreen black rectangle and a scream over a game, a call or a
+    // full-screen video is the single most intrusive thing this extension can
+    // do.
     //
-    // The tab path is not a safe consolation either, which is why this bails
-    // before injecting rather than merely declining the window: injection goes
+    // Injecting is not a safe consolation either, which is why this bails
+    // before injecting rather than merely declining the fallback: injection goes
     // to EVERY injectable tab, so a minimised browser played the scream once
     // per open tab, simultaneously, from tabs nobody could see.
     //
@@ -309,68 +258,69 @@ describe('attemptFire', () => {
     // arrives on the next tick after they come back.
     const browser = fakeBrowser({ focused: false });
 
-    expect(await attemptFire(browser, { allowStandaloneWindow: true })).toBe(false);
-    expect(browser.windows.create).not.toHaveBeenCalled();
+    expect(await attemptFire(browser, { allowFallback: true })).toBe(false);
+    expect(browser.tabs.create).not.toHaveBeenCalled();
     expect(browser.scripting.executeScript).not.toHaveBeenCalled();
   });
 
   it('does not spend the roll when nothing user-visible happened', async () => {
     // Background tabs took the overlay but the active tab is restricted and
-    // the window would not open: the user saw nothing, so the roll must
+    // the scare tab would not open: the user saw nothing, so the roll must
     // survive for the next tick.
     const browser = fakeBrowser({
       tabs: [
-        { id: 1, url: 'about:config', active: true },
-        { id: 2, url: 'https://ok.example' },
+        tab(1, 'about:config', { active: true }),
+        tab(2, 'https://ok.example'),
       ],
-      createWindow: vi.fn(async () => { throw new Error('no window'); }),
+      createTab: vi.fn(async () => { throw new Error('no tab'); }),
     });
 
-    expect(await attemptFire(browser, { allowStandaloneWindow: true })).toBe(false);
+    expect(await attemptFire(browser, { allowFallback: true })).toBe(false);
   });
 });
 
-// --- the standalone window can be switched off ----------------------------
+// --- the scare tab can be switched off --------------------------------------
 //
-// The standalone window is the only overlay that cannot be transparent: it has
-// no page behind it, so it is painted black. It is on by default, because a
-// scare that silently does nothing reads as a broken extension - but anyone
-// who would rather never see a black screen can turn it off in the panel.
+// The scare tab is the only overlay that cannot be transparent: it has no page
+// behind it, only a photo of one, or black when the photo cannot be taken. It
+// is on by default, because a scare that silently does nothing reads as a
+// broken extension - but anyone who would rather Foxy only ever appeared over a
+// live page can turn it off in the panel.
 //
 // Turning it off costs nothing: attemptFire reports false, the caller leaves
 // the roll unspent, and the next tick fires transparently over the first
 // ordinary tab the user lands on.
 
-describe('attemptFire, standalone window switched off by the user', () => {
-  it('does not open the standalone window when no tab will take the overlay', async () => {
-    const browser = fakeBrowser({ tabs: [{ id: 1, url: 'about:config' }] });
+describe('attemptFire, scare tab switched off by the user', () => {
+  it('does not open the scare tab when the page will not take the overlay', async () => {
+    const browser = fakeBrowser({ tabs: [tab(1, 'about:config', { active: true })] });
 
-    expect(await attemptFire(browser, { allowStandaloneWindow: false })).toBe(false);
-    expect(browser.windows.create).not.toHaveBeenCalled();
+    expect(await attemptFire(browser, { allowFallback: false })).toBe(false);
+    expect(browser.tabs.create).not.toHaveBeenCalled();
   });
 
-  it('does not open the standalone window when the active tab is restricted', async () => {
+  it('does not open the scare tab when the active tab is restricted', async () => {
     const browser = fakeBrowser({
       tabs: [
-        { id: 1, url: 'https://addons.mozilla.org/x', active: true },
-        { id: 2, url: 'https://ok.example' },
+        tab(1, 'https://addons.mozilla.org/x', { active: true }),
+        tab(2, 'https://ok.example'),
       ],
     });
 
-    expect(await attemptFire(browser, { allowStandaloneWindow: false })).toBe(false);
+    expect(await attemptFire(browser, { allowFallback: false })).toBe(false);
     // The background tab still gets the overlay, so a tab switch mid-scream is
     // still covered. It just does not count as the user having seen it.
     expect(browser.scripting.executeScript).toHaveBeenCalledOnce();
-    expect(browser.windows.create).not.toHaveBeenCalled();
+    expect(browser.tabs.create).not.toHaveBeenCalled();
   });
 
-  it('does not open the standalone window when no browser window has focus', async () => {
+  it('does not open the scare tab when no browser window has focus', async () => {
     // Same answer with the setting off, for a different reason: an unfocused
     // browser declines before it gets this far. See the focus test above.
     const browser = fakeBrowser({ focused: false });
 
-    expect(await attemptFire(browser, { allowStandaloneWindow: false })).toBe(false);
-    expect(browser.windows.create).not.toHaveBeenCalled();
+    expect(await attemptFire(browser, { allowFallback: false })).toBe(false);
+    expect(browser.tabs.create).not.toHaveBeenCalled();
   });
 
   it('still reports success when the overlay lands in the active tab', async () => {
@@ -378,15 +328,15 @@ describe('attemptFire, standalone window switched off by the user', () => {
     // untouched by it.
     const browser = fakeBrowser();
 
-    expect(await attemptFire(browser, { allowStandaloneWindow: false })).toBe(true);
-    expect(browser.windows.create).not.toHaveBeenCalled();
+    expect(await attemptFire(browser, { allowFallback: false })).toBe(true);
+    expect(browser.tabs.create).not.toHaveBeenCalled();
   });
 
   it('is the behaviour when the option is passed explicitly as false', async () => {
-    const browser = fakeBrowser({ tabs: [{ id: 1, url: 'about:config' }] });
+    const browser = fakeBrowser({ tabs: [tab(1, 'about:config', { active: true })] });
 
-    expect(await attemptFire(browser, { allowStandaloneWindow: false })).toBe(false);
-    expect(browser.windows.create).not.toHaveBeenCalled();
+    expect(await attemptFire(browser, { allowFallback: false })).toBe(false);
+    expect(browser.tabs.create).not.toHaveBeenCalled();
   });
 });
 
@@ -408,9 +358,9 @@ describe('attemptFire, sound', () => {
     // state.mjs, or a fresh install and a running extension disagree.
     const browser = fakeBrowser({
       tabs: [
-        { id: 1, url: 'https://a.example' },
-        { id: 2, url: 'https://b.example', active: true },
-        { id: 3, url: 'https://c.example' },
+        tab(1, 'https://a.example'),
+        tab(2, 'https://b.example', { active: true }),
+        tab(3, 'https://c.example'),
       ],
     });
 
@@ -418,26 +368,27 @@ describe('attemptFire, sound', () => {
     expect(urlsByTab(browser)).toEqual({ 1: MUTED, 2: AUDIBLE, 3: MUTED });
   });
 
-  it('keeps the sound for the fallback window and mutes the tabs behind it', async () => {
-    // The path where it was worst: the window screamed, and so did every
+  it('keeps the sound for the scare tab and mutes the tabs behind it', async () => {
+    // The path where it was worst: the fallback screamed, and so did every
     // background tab, all at once.
     const browser = fakeBrowser({
       tabs: [
-        { id: 1, url: 'about:config', active: true },
-        { id: 2, url: 'https://b.example' },
+        tab(1, 'about:config', { active: true }),
+        tab(2, 'https://b.example'),
       ],
     });
 
-    expect(await attemptFire(browser, { allowStandaloneWindow: true })).toBe(true);
+    expect(await attemptFire(browser, { allowFallback: true })).toBe(true);
     expect(urlsByTab(browser)).toEqual({ 2: MUTED });
-    expect(browser.windows.create.mock.calls[0][0].url).toBe(AUDIBLE);
+    expect(scareTabUrl(browser).pathname).toBe('/overlay.html');
+    expect(scareTabUrl(browser).searchParams.has('muted')).toBe(false);
   });
 
   it('screams from every tab when the user asked for that', async () => {
     const browser = fakeBrowser({
       tabs: [
-        { id: 1, url: 'https://a.example' },
-        { id: 2, url: 'https://b.example', active: true },
+        tab(1, 'https://a.example'),
+        tab(2, 'https://b.example', { active: true }),
       ],
     });
 

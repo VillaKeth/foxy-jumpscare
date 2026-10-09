@@ -145,7 +145,7 @@ code and was checked against `extension/src/` — there are no `fetch`,
 
 | Permission | Paste this |
 | --- | --- |
-| `storage` | Stores the user's four settings locally — chosen odds, enabled/disabled, whether the standalone fallback window is allowed, and the remaining countdown. Nothing else is written, and nothing is synced or transmitted. |
+| `storage` | Stores the user's settings locally — chosen odds, enabled/disabled, whether a scare may open in a tab of its own on pages that refuse the overlay, whether every open tab screams or only the active one, and the remaining countdown. Nothing else is written, and nothing is synced or transmitted. |
 | `alarms` | Drives the countdown between scares. An MV3 service worker is terminated when idle, so an in-memory timer cannot survive; alarms are the supported mechanism for resuming a countdown after the worker is torn down. |
 | `idle` | Pauses the countdown when the user is away or the screen is locked, so that a browser left open overnight does not consume the odds while nobody is watching. Only the three-state idle status is read — active, idle, or locked. No activity data is recorded or transmitted. |
 | `scripting` | Places the overlay into the active tab at the moment a scare fires. Nothing is injected at any other time. The injected frame is served from the extension package and does not read or modify the host page. |

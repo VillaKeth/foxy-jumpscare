@@ -1,29 +1,30 @@
 /**
- * A photograph of what the user is looking at, for the fallback window to sit
- * on so the scare is not a black rectangle.
+ * A photograph of the page the user is looking at, for the scare tab to paint
+ * behind Foxy so the scare is not a black rectangle.
  *
- * The standalone window exists because some pages will not take an injected
- * overlay - PDFs (pdf.js is privileged; executeScript returns "Missing host
- * permission for the tab"), about: pages, and addons.mozilla.org. Those are
- * exactly the pages where the effect used to collapse into a fullscreen black
- * screen, because a browser window has no per-pixel alpha and there is nothing
- * behind it to composite over.
+ * The scare tab exists because some pages will not take an injected overlay -
+ * PDFs (pdf.js is privileged; executeScript returns "Missing host permission
+ * for the tab"), about: pages, the new tab page, and addons.mozilla.org. Those
+ * are exactly the pages where the effect used to collapse into a black screen,
+ * because a tab of the extension's own has no page behind it to composite over.
  *
- * There does not have to be. `tabs.captureVisibleTab` photographs a PDF tab
- * perfectly well - verified against the real pdf.js viewer - so the window can
- * paint that photo where the page was and key Foxy over it. It is not
- * transparency; it is indistinguishable from it for the second the scare lasts.
+ * It does not need one. `tabs.captureVisibleTab` photographs a PDF tab
+ * perfectly well - verified against the real pdf.js viewer - so the scare tab
+ * can paint that photo exactly where the page was and key Foxy over it. It is
+ * not transparency; it is indistinguishable from it for the second the scare
+ * lasts.
  *
- * The photo has to arrive BEFORE the window's first paint, or the user sees
- * black, then their page, then Foxy - a flicker worse than plain black. That
- * rules out storage and messaging, both async. The URL fragment is the only
- * channel a synchronous head script can read, which is what backdrop.js is.
- * Measured: a busy 1280x843 page is 153 KB at JPEG q60, windows.create accepts
- * fragments past 2 MB, and backdrop.js applies it in 0ms against a first
- * animation frame at +90ms.
+ * The photo has to arrive BEFORE the tab's first paint, or the user sees black,
+ * then their page, then Foxy - a flicker worse than plain black. That rules out
+ * storage and messaging, both async. The URL fragment is the only channel a
+ * synchronous head script can read, which is what backdrop.js is. Measured: a
+ * busy 1280x843 page is 153 KB at JPEG q60, URLs carry fragments past 2 MB,
+ * and backdrop.js applies it in 0ms against a first animation frame at +90ms.
  *
  * Nothing here is stored or sent anywhere. The capture lives in the URL of a
- * window that closes itself under a second later.
+ * tab that strips it on arrival and closes itself about a second later - and
+ * only in Firefox, which never writes that URL into history. Chrome would. See
+ * scare-tab.mjs, which decides.
  */
 
 /**
@@ -46,40 +47,13 @@ async function measureBitmap(dataUrl) {
 }
 
 /**
- * Where on the SCREEN the captured viewport was, in CSS pixels.
+ * Build the fragment the scare tab carries, or '' to fall back to black.
  *
- * The capture is the content area only - no tab strip, no address bar - and it
- * comes back in device pixels, so it is scaled by devicePixelRatio. The window
- * bounds are in CSS pixels and in screen coordinates. Chrome sits at the top,
- * and whatever border the window has is assumed even down both sides, which
- * gives the vertical inset once the content height is known.
- *
- * Exported for its own test: the arithmetic is the part that decides whether
- * the page appears exactly where it was or visibly jumps.
- */
-export function placeShot({ win, shot, dpr = 1 }) {
-  const scale = dpr > 0 ? dpr : 1;
-  const viewWidth = shot.width / scale;
-  const viewHeight = shot.height / scale;
-  if (!(viewWidth > 0) || !(viewHeight > 0)) return null;
-
-  const border = Math.max(0, (win.width - viewWidth) / 2);
-  const x = win.left + border;
-  // Chrome is all at the top: whatever height is not content and not the
-  // bottom border is the tab strip and toolbar.
-  const y = win.top + win.height - viewHeight - border;
-
-  if (![x, y].every(Number.isFinite)) return null;
-  return {
-    x: Math.round(x),
-    y: Math.round(y),
-    width: Math.round(viewWidth),
-    height: Math.round(viewHeight),
-  };
-}
-
-/**
- * Build the fragment the fallback window carries, or '' to fall back to black.
+ * `iw`/`ih` are the photo's own size in device pixels and `ch` is the page's
+ * height in CSS pixels, from the tab itself. The photo alone does not say
+ * where the page is in it: Firefox photographs privileged about: pages onto a
+ * canvas the size of the WINDOW, page at the top-left and black beyond. See
+ * backdrop.js for how the two are put back together.
  *
  * The image goes LAST and raw. Base64 contains none of `#`, `%` or `&`, so it
  * survives a fragment untouched, and percent-encoding it would inflate every
@@ -90,24 +64,22 @@ export function placeShot({ win, shot, dpr = 1 }) {
  * black background is the behaviour this replaces; it is not worth losing one
  * over a screenshot.
  */
-export async function backdropFragment(browser, { measure = measureBitmap } = {}) {
+export async function backdropFragment(browser, page, { measure = measureBitmap } = {}) {
   try {
+    if (!(page.height > 0)) return '';
     if (typeof browser.tabs?.captureVisibleTab !== 'function') return '';
 
-    const shot = await browser.tabs.captureVisibleTab(null, {
+    const shot = await browser.tabs.captureVisibleTab(page.windowId, {
       format: 'jpeg',
       quality: SHOT_QUALITY,
     });
     if (typeof shot !== 'string' || !shot.startsWith('data:image/')) return '';
     if (shot.length > MAX_SHOT_CHARS) return '';
 
-    const [size, win] = await Promise.all([measure(shot), browser.windows.getLastFocused()]);
-    if (!size || !win || !Number.isFinite(win.left) || !Number.isFinite(win.width)) return '';
+    const size = await measure(shot);
+    if (!(size?.width > 0) || !(size?.height > 0)) return '';
 
-    const at = placeShot({ win, shot: size, dpr: globalThis.devicePixelRatio || 1 });
-    if (!at) return '';
-
-    return `#foxy&x=${at.x}&y=${at.y}&w=${at.width}&h=${at.height}&bg=${shot}`;
+    return `#foxy&iw=${size.width}&ih=${size.height}&ch=${page.height}&bg=${shot}`;
   } catch {
     return '';
   }

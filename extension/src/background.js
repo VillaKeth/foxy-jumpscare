@@ -1,6 +1,7 @@
 import { drawRemaining } from './lib/roll.mjs';
 import { TICK_SECONDS, creditTick } from './lib/ticker.mjs';
 import { attemptFire } from './lib/fire.mjs';
+import { onCloseRequest } from './lib/scare-tab.mjs';
 import { seedState, STATE_KEYS } from './lib/state.mjs';
 
 const ALARM = 'foxy-tick';
@@ -22,7 +23,7 @@ const getState = async () => seedState(await chrome.storage.local.get(STATE_KEYS
  * quietly behave more forgivingly than a real one.
  */
 const fireOptions = (state) => ({
-  allowStandaloneWindow: state.fallbackWindow,
+  allowFallback: state.fallbackWindow,
   soundEveryTab: state.soundEveryTab,
 });
 
@@ -95,6 +96,15 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
       (err) => sendResponse({ fired: false, error: String(err) })
     );
   return true; // keep the message channel open for the async reply
+});
+
+/**
+ * A scare tab asking to be closed when Foxy is done. onCloseRequest decides
+ * whether the sender is one; nothing else is answered here.
+ */
+chrome.runtime.onMessage.addListener((message, sender) => {
+  onCloseRequest(chrome, message, sender);
+  return undefined;
 });
 
 /**

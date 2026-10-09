@@ -75,7 +75,16 @@ inspection.
 - `lib/fire.mjs` — when the countdown reaches zero, injects the overlay into
   every open tab it is permitted to touch. Only the tab the user is looking at
   plays sound; the rest are muted copies, unless the user switches on "Scream
-  from every open tab" in the panel.
+  from every open tab" in the panel. If the tab the user is looking at will not
+  take the overlay, the scare goes to `lib/scare-tab.mjs` instead.
+- `lib/scare-tab.mjs` — the scare for a page that refuses injection (a PDF,
+  an `about:` page, the new tab page, AMO): `overlay.html` opened in a tab of
+  its own right beside that page, which the background closes about a second
+  later, handing the user back to the page. Can be switched off in the panel.
+- `lib/backdrop-shot.mjs` / `backdrop.js` — so that tab shows the page rather
+  than black: one `tabs.captureVisibleTab` JPEG of the page, passed to the tab
+  in its URL fragment and painted behind the video before first paint. See
+  "On `<all_urls>`" below.
 - `lib/inject.mjs` — the injected function. Appends one `<iframe>` pointing at
   the extension's own `overlay.html` and nothing else.
 - `overlay.html` / `overlay.js` — plays the video, then removes itself. There
@@ -95,9 +104,18 @@ reasons, all load-bearing:
 
 ### On `<all_urls>`
 
-Required only so the overlay can be drawn on whatever page the user is on when
-it fires. The extension does not read, collect, or transmit page content — it
+Required so the overlay can be drawn on whatever page the user is on when it
+fires. The extension does not read, collect, or transmit page content — it
 appends an element and removes it about a second later.
+
+It is also what permits `tabs.captureVisibleTab`, used once per scare and only
+on a page that refused the overlay. The picture is passed to the extension's own
+scare tab in its URL fragment, removed from the URL by `history.replaceState`
+as soon as it is painted, and gone when that tab closes about a second later. It
+is never stored or transmitted. Firefox keeps `moz-extension:` pages out of
+history, and the tab is navigated to `about:blank` with `loadReplace` before
+it is closed so it does not appear under Recently Closed. The same code skips
+the capture on Chromium browsers, which would record the URL in history.
 
 There are **no network requests of any kind**, no analytics, no telemetry, no
 remote code, and no `eval`. Stored data is limited to the user's own settings
@@ -114,7 +132,7 @@ store description and in the extension's own UI.
 ## Tests
 
 ```
-npm test               # 96 unit tests
+npm test               # 173 unit tests
 npm run lint:firefox   # addons-linter against dist/firefox
 npm run lint:package   # addons-linter against the built archive
 ```

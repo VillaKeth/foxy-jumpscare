@@ -30,14 +30,14 @@ them out deliberately — do not add them, and do not `git add -f` them.
 or an overlay can't be shown, leave `remaining` at 0 and retry next tick. This is also
 why `attemptFire` bails before doing anything when no browser window has OS focus:
 a pending fire can land on a tick while the browser is in the background, and both
-paths intrude on whatever the user actually switched to — the standalone window puts a
-fullscreen black rectangle and a scream over a game or a call, and the tab path injects
-into *every* injectable tab, so a minimised window played the scream once per open tab
-at once, from tabs nobody could see. Declining costs nothing; the roll survives and the
+paths intrude on whatever the user actually switched to — the fallback screams over a
+game or a call (in 0.1.10 it also put a fullscreen black window on top of them), and the
+injection path reaches *every* injectable tab, so a minimised window played the scream
+once per open tab at once, from tabs nobody could see. Declining costs nothing; the roll survives and the
 scare lands on the next tick after they come back.
 
 **One scream per scare.** Every injectable tab gets the overlay, so it follows a tab
-switch, but only the active tab's copy (or the fallback's) has sound — background copies
+switch, but only the active tab's copy (or the scare tab's) has sound — background copies
 load `overlay.html?muted`. Ten tabs used to be ten screams a few ms apart. The panel's
 "Scream from every open tab" (`soundEveryTab`, default off) brings the chorus back.
 `overlay.html`'s `<video>` has no `autoplay` attribute on purpose: `overlay.js` must set
@@ -47,6 +47,8 @@ load `overlay.html?muted`. Ten tabs used to be ten screams a few ms apart. The p
 `ended` / `MediaEnded` event; an independent timer force-closes at video duration +
 1.5s regardless of media state. A video that fails to decode never raises `ended`.
 Never ship a path where a bug can leave an un-closable fullscreen window on a screen.
+The extension's scare tab has two: `overlay.js`'s own hard stop, and a 10s backstop in
+the background that closes it from outside.
 
 **The browser overlay is an extension-origin iframe, not injected elements.** This is
 load-bearing for three separate reasons — page CSP blocks injected media on sites like
@@ -65,21 +67,38 @@ carries its own libVLC and never depends on an OS codec.
 
 **Neither overlay paints a backdrop.** Browser and desktop both composite Foxy over
 whatever was already on screen; an opaque backdrop turns the scare into a video
-player. The one exception is the extension's standalone fallback window, which has
-no page behind it — `backdrop.js` paints that, in `<head>`, before first paint.
+player. The one exception is the extension's scare tab, which has no page behind
+it — `backdrop.js` paints that, in `<head>`, before first paint.
 
-**That window photographs the page rather than settling for black.** `executeScript`
-cannot reach pdf.js (`Missing host permission for the tab`), about: pages or AMO, but
-`tabs.captureVisibleTab` photographs all of them fine — verified against the real PDF
-viewer. `backdrop-shot.mjs` captures, works out where the viewport sat on screen, and
-hands both to `backdrop.js` in the URL fragment; the window then paints the page where
-it was and keys Foxy over it. The fragment is the channel because it is the only one a
-synchronous head script can read — storage and messaging are async, and arriving after
-first paint would show black, then the page, then Foxy, which is worse than black.
-Measured: busy page 153 KB at JPEG q60, `windows.create` accepts fragments past 2 MB,
-applied in 0ms against a first animation frame at +90ms. Needs no new permission —
-`<all_urls>` already covers it. Every failure path returns `''` and the window is black,
-as before; never let a missing screenshot cost the scare.
+**The fallback is a tab beside the page, not a window.** When the page in front of the
+user refuses injection (PDF, about:, new tab, AMO, chrome://), `scare-tab.mjs` opens
+`overlay.html?scare&title=…` at `index + 1`, active, with `openerTabId`. The 0.1.10
+popup window blacked out the tab strip, toolbar and taskbar, took twice as long, and drew
+about: pages ~80px off. Closing is the background's job, on a message from the page, and
+it obeys only a top-level `overlay.html` (`frameId === 0` plus a URL check): iframe
+copies' `sender.tab` is the user's own page, and `overlay.html` is web-accessible. It
+hands the user back only to the browser-recorded `openerTabId`, never to anything the
+message names, and only if they are still on the scare tab. Before removing the tab it
+navigates it to `about:blank` with `loadReplace` and waits for the load — Firefox then
+keeps no Recently Closed entry, so Ctrl+Shift+T cannot replay the scare. Chrome rejects
+`loadReplace` and just closes; a restored copy has lost the `scare` marker, and
+`overlay.js` keeps any top-level copy without it silent and closes it.
+
+**The scare tab photographs the page — in Firefox only.** `executeScript` cannot reach
+pdf.js (`Missing host permission for the tab`), about: pages or AMO, but
+`tabs.captureVisibleTab` photographs all of them. The photo rides in the URL fragment,
+the only channel a synchronous head script can read — storage and messaging are async,
+and arriving after first paint shows black, then the page, then Foxy, which is worse than
+black. `backdrop.js` paints it 1:1 (÷ devicePixelRatio), bottom-aligned on the page's
+own height with `calc(100vh - ch)` — Firefox photographs privileged about: pages onto a
+window-sized canvas, and the new tab page's bookmarks bar makes that viewport taller than
+the scare tab's — then strips the URL with `history.replaceState`. Measured in real
+Firefox: 0px off on a PDF, the new tab page, AMO and about:license. **The URL is why it is
+Firefox only.** Firefox never records `moz-extension:` pages in history, short URL or long
+(measured); Chrome records the full URL, photo and all (measured), so `historyIgnores()`
+gates the capture on the scheme and Chromium gets black. Do not lift that gate without
+moving the photo out of the URL. Every failure path returns `''` and the tab is black;
+never let a missing photo cost the scare.
 
 **The browser overlay declares `color-scheme: light dark`, in both places.** On the
 iframe element (`inject.mjs`, inline `!important`) and on the overlay document

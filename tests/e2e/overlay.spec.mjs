@@ -120,9 +120,9 @@ test('does not double-inject', async ({ context, worker }) => {
 
 test('declines to fire when every tab is privileged and the fallback is off', async ({ context, worker }) => {
   // Not the shipped default any more - 0.1.9 turned the fallback on - but what
-  // a user who unticks the box gets. The standalone window is the one overlay
-  // that cannot be transparent, and a fullscreen black screen is not the effect
-  // this extension is for, so with nowhere to draw it draws nothing.
+  // a user who unticks the box gets. The scare tab is the one overlay that
+  // cannot be transparent - it has a photo of the page behind it at best - so
+  // with nowhere to draw it draws nothing.
   //
   // Nothing is lost by declining: reporting false leaves the roll unspent, so
   // the next tick lands transparently on the first ordinary tab opened.
@@ -137,41 +137,96 @@ test('declines to fire when every tab is privileged and the fallback is off', as
   const fired = await worker.evaluate(() => globalThis.__foxyTest.fireNow());
   expect(fired).toBe(false);
 
-  const overlayWindow = await context
+  const scareTab = await context
     .waitForEvent('page', {
       predicate: (p) => p.url().includes('overlay.html'),
       timeout: 3_000,
     })
     .catch(() => null);
-  expect(overlayWindow).toBeNull();
+  expect(scareTab).toBeNull();
 });
 
-test('opens a standalone black window when every tab is privileged and the fallback is on', async ({ context, worker }) => {
+/** The tab in front of the user, as the extension sees it. */
+const activeTab = (worker) => worker.evaluate(async () => {
+  const [tab] = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
+  return { id: tab.id, index: tab.index, windowId: tab.windowId };
+});
+
+test('opens Foxy in a tab beside a page he cannot draw on, then hands the page back', async ({ context, worker, extensionId }) => {
   // On by default since 0.1.9. Before the setting existed it was unconditional,
   // which is how a user sitting on about:addons got a fullscreen black screen
   // instead of the scare they expected; 0.1.7 made it opt-in, and that turned
   // out to mean the scare silently did nothing on PDFs, on about: pages, and on
   // any new tab page supplied by another extension.
+  //
+  // It was a fullscreen popup window until 0.1.11. That blacked out the tab
+  // strip, the toolbar and the taskbar for the length of the scare, took twice
+  // as long to appear, and drew privileged about: pages ~80px too high. A tab
+  // in the same window replaces the page area and nothing else.
   await setState(worker, { fallbackWindow: true, fallbackChosen: true });
   await makeEveryTabPrivileged(context);
+  await context.pages()[0].bringToFront();
+  const page = await activeTab(worker);
 
-  const fired = await worker.evaluate(() => globalThis.__foxyTest.fireNow());
-  expect(fired).toBe(true);
-
-  const overlayWindow = await context.waitForEvent('page', {
+  const opened = context.waitForEvent('page', {
     predicate: (p) => p.url().includes('overlay.html'),
     timeout: 10_000,
   });
-  expect(overlayWindow.url()).toContain('overlay.html');
+  expect(await worker.evaluate(() => globalThis.__foxyTest.fireNow())).toBe(true);
+  const scare = await opened;
 
-  // Black, because there is no page behind this one. The stylesheet says
-  // transparent for the injected-iframe case, and in a window of its own
-  // "transparent" resolves to the browser's blank canvas - a fullscreen white
-  // flash with a fox in it. That shipped from 0.1.1 to 0.1.4.
-  const background = await overlayWindow.evaluate(
-    () => getComputedStyle(document.documentElement).backgroundColor
-  );
-  expect(background).toBe('rgb(0, 0, 0)');
+  // Right beside the page, in front of the user, and owned by it - the owner
+  // is who the user is handed back to.
+  const beside = await worker.evaluate(async ({ windowId, index }) => {
+    const [tab] = await chrome.tabs.query({ windowId, index });
+    return tab && { active: tab.active, openerTabId: tab.openerTabId };
+  }, { windowId: page.windowId, index: page.index + 1 });
+  expect(beside).toEqual({ active: true, openerTabId: page.id });
+
+  // One look while it plays: the clip is under a second long, and the tab is
+  // gone soon after.
+  const seen = await scare.evaluate(() => new Promise((resolve) => {
+    const video = document.getElementById('foxy');
+    const look = () => resolve({
+      muted: video.muted,
+      playing: !video.paused && video.currentTime > 0,
+      // Black underneath, never the browser's white canvas - a white flash
+      // before a jumpscare is what the photosensitivity warning is for.
+      background: getComputedStyle(document.documentElement).backgroundColor,
+      // Whatever photo it carried has left the address bar.
+      href: location.href,
+    });
+    if (!video.paused && video.currentTime > 0) look();
+    else video.addEventListener('timeupdate', look, { once: true });
+  }));
+  expect(seen).toEqual({
+    muted: false,
+    playing: true,
+    background: 'rgb(0, 0, 0)',
+    href: `chrome-extension://${extensionId}/overlay.html`,
+  });
+
+  // Done: the tab goes, and the user is back on the page they were on. Well
+  // inside the background's 10s backstop, which would otherwise hide a close
+  // request the background ignored.
+  if (!scare.isClosed()) await scare.waitForEvent('close', { timeout: 5_000 });
+  await expect.poll(async () => (await activeTab(worker)).id).toBe(page.id);
+});
+
+test('a scare tab that comes back stays silent and closes itself', async ({ context, extensionId }) => {
+  // Chrome cannot keep the closed scare tab out of Recently Closed, so
+  // Ctrl+Shift+T brings it back - with the URL already stripped of everything
+  // that made it a scare. A reload mid-scare and session restore after a crash
+  // land the same way. A replay screaming out of nowhere, minutes later, is
+  // the one scare nobody should get.
+  const stray = await context.newPage();
+  const logs = [];
+  stray.on('console', (message) => logs.push(message.text()));
+  const closed = stray.waitForEvent('close', { timeout: 10_000 });
+
+  await stray.goto(`chrome-extension://${extensionId}/overlay.html`).catch(() => {});
+  await closed;
+  expect(logs.filter((text) => text.startsWith('[foxy] playing'))).toEqual([]);
 });
 
 test('the overlay tears itself down', async ({ context, worker }) => {
@@ -193,11 +248,13 @@ test('the shipped video actually carries alpha', async ({ context, extensionId }
     'assets/foxy.webm not built yet - run npm run assets (needs the source clip)'
   );
 
+  // The file itself, not overlay.html: opened on its own, that is a stray and
+  // closes itself (see above).
   const page = await context.newPage();
-  await page.goto(`chrome-extension://${extensionId}/overlay.html`);
+  await page.goto(`chrome-extension://${extensionId}/foxy.webm`);
 
   const sample = await page.evaluate(async () => {
-    const v = document.getElementById('foxy');
+    const v = document.querySelector('video');
     await new Promise((resolve, reject) => {
       if (v.readyState >= 2) return resolve();
       v.addEventListener('loadeddata', resolve, { once: true });

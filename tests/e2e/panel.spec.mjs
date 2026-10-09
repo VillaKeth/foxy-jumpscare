@@ -101,7 +101,7 @@ test('"Test it now" fires without spending the real roll', async ({ context, wor
   expect((await readState(worker)).remaining).toBe(42_000);
 });
 
-test('"Test it now" says so rather than going black, with the fallback off', async ({ context, worker, extensionId }) => {
+test('"Test it now" says so rather than opening a scare tab, with the fallback off', async ({ context, worker, extensionId }) => {
   await setState(worker, { oneInN: 100_000, remaining: 42_000, fallbackWindow: false, fallbackChosen: true });
 
   const page = await context.newPage();

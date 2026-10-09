@@ -3,9 +3,9 @@
 <title>foxy</title>
 <!--
   Must stay HERE: above the stylesheet, no defer, no type="module". It picks
-  the backdrop before first paint, which is the difference between the
-  standalone fallback opening black and opening with a white flash. An inline
-  script would be blocked by MV3's script-src 'self'. See backdrop.js.
+  the backdrop before first paint, which is the difference between the scare
+  tab opening on black or a photo of the page, and opening with a white flash.
+  An inline script would be blocked by MV3's script-src 'self'. See backdrop.js.
 -->
 <script src="backdrop.js"></script>
 <style>
@@ -15,10 +15,10 @@
    * reading. An opaque backdrop turns that into a video player.
    *
    * This is the right value for the iframe case only. When the page loads in
-   * a window of its own - the fallback in fire.mjs - transparent resolves to
-   * the browser's blank canvas and the scare is a fullscreen white flash.
-   * overlay.js detects that case and paints it black; see the note there.
-   * Do not resolve the two cases by changing this line.
+   * a tab of its own - the scare tab, lib/scare-tab.mjs - transparent resolves
+   * to the browser's blank canvas and the scare is a white flash. backdrop.js
+   * detects that case and paints it black, or a photo of the page; see the
+   * note there. Do not resolve the two cases by changing this line.
    */
   /*
    * `color-scheme` is load-bearing and is NOT cosmetic here. Firefox paints an

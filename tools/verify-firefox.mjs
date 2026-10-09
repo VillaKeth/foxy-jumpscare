@@ -41,11 +41,11 @@ setTimeout(async () => {
   // not reliably have it. Without this the run measures the window manager
   // rather than the extension.
   //
-  // This used to go unnoticed: an unfocused window took the standalone-window
-  // fallback, which reported success anyway. The fallback is on by default
-  // again, so pin the setting off below rather than relying on the default -
-  // otherwise an unfocused window quietly passes every check by opening a
-  // black standalone window instead of injecting anywhere.
+  // This used to go unnoticed: an unfocused window took the fallback, which
+  // reported success anyway. The fallback is on by default, so pin the setting
+  // off below rather than relying on the default - otherwise a run that injects
+  // nowhere quietly passes every check by opening a scare tab instead. The
+  // scare tab gets a run of its own once these checks have reported.
   const win = await chrome.windows.getLastFocused().catch(() => null);
   if (win) await chrome.windows.update(win.id, { focused: true }).catch(() => {});
   const refocused = await chrome.windows.getLastFocused().catch(() => null);
@@ -117,7 +117,52 @@ setTimeout(async () => {
       }
     }
   }, 700);
+
+  setTimeout(scareTabRun, 2500);
 }, 7000);
+
+/**
+ * The fallback, on a page that refuses the overlay: a PDF, which Firefox shows
+ * in the privileged pdf.js viewer. (Not an about: page - Firefox will not let
+ * an extension open one.)
+ *
+ * Every check this feeds rests on Firefox behaviour the Chromium suite cannot
+ * see - that it labels the scare tab's close request as coming from a top-level
+ * frame, that a tab blanked with loadReplace stays out of Recently Closed, and
+ * that captureVisibleTab photographs a page executeScript cannot touch.
+ */
+async function scareTabRun() {
+  const report = { stage: 'scare-tab' };
+  const key = (c) => (c.tab ? 'tab:' + c.tab.sessionId : 'window:' + c.window?.sessionId);
+  try {
+    await chrome.storage.local.set({ fallbackWindow: true, fallbackChosen: true });
+    const page = await chrome.tabs.create({ url: 'http://localhost:${PORT}/scare.pdf', active: true });
+    await new Promise((r) => setTimeout(r, 2000)); // pdf.js renders it
+    const closedBefore = (await chrome.sessions.getRecentlyClosed({})).map(key);
+
+    const t0 = Date.now();
+    report.fired = await globalThis.__foxyTest.fireNow();
+    const [tab] = await chrome.tabs.query({ windowId: page.windowId, index: page.index + 1 });
+    report.beside = Boolean(tab) && tab.active && tab.openerTabId === page.id;
+
+    // Well inside the background's 10s backstop, which would otherwise hide a
+    // close request that went ignored.
+    const exists = (id) => chrome.tabs.get(id).then(() => true, () => false);
+    while (tab && Date.now() - t0 < 12_000 && await exists(tab.id)) {
+      await new Promise((r) => setTimeout(r, 50));
+    }
+    report.goneMs = Date.now() - t0;
+    const [active] = await chrome.tabs.query({ active: true, windowId: page.windowId });
+    report.backOnPage = active?.id === page.id;
+
+    await new Promise((r) => setTimeout(r, 500));
+    report.newlyClosed = (await chrome.sessions.getRecentlyClosed({}))
+      .map(key).filter((k) => !closedBefore.includes(k)).length;
+  } catch (e) {
+    report.error = String(e).slice(0, 160);
+  }
+  send(report);
+}
 
 /**
  * What the screen actually looks like.
@@ -184,7 +229,23 @@ const post = (d) => navigator.sendBeacon(R, JSON.stringify(d));
 video.addEventListener('loadeddata', () =>
   post({ stage: 'video', w: video.videoWidth, h: video.videoHeight, duration: video.duration }));
 
+// The scare tab: the only copy with no page around it.
+if (window.parent === window) {
+  video.addEventListener('timeupdate', () => post({
+    stage: 'scare-playback',
+    muted: video.muted,
+    paused: video.paused,
+    // backdrop.js painted the photo of the page, not just black...
+    photo: getComputedStyle(document.documentElement).backgroundImage.startsWith('url("data:image/'),
+    // ...and took it back out of the address bar.
+    stripped: location.search === '' && location.hash === '',
+  }), { once: true });
+}
+
 setTimeout(() => {
+  // The checks below are about the iframe. Pausing the scare tab for them would
+  // also stop it ever ending, and it would close on its failsafe instead.
+  if (window.parent === window) return;
   post({
     stage: 'playback', muted: video.muted, paused: video.paused,
     t: Number(video.currentTime.toFixed(2)), err: video.error?.message ?? null,
@@ -238,6 +299,30 @@ function sampleAlpha() {
 
 const reports = [];
 
+/** A one-page PDF, built here so the repo carries no binary fixture for it. */
+function makePdf() {
+  const content = 'BT /F1 24 Tf 72 700 Td (Foxy cannot be drawn on a PDF) Tj ET';
+  const objs = [
+    '<< /Type /Catalog /Pages 2 0 R >>',
+    '<< /Type /Pages /Kids [3 0 R] /Count 1 >>',
+    '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 4 0 R'
+      + ' /Resources << /Font << /F1 5 0 R >> >> >>',
+    `<< /Length ${content.length} >>\nstream\n${content}\nendstream`,
+    '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>',
+  ];
+  let pdf = '%PDF-1.4\n';
+  const offsets = objs.map((o, i) => {
+    const at = pdf.length;
+    pdf += `${i + 1} 0 obj\n${o}\nendobj\n`;
+    return at;
+  });
+  const xref = pdf.length;
+  pdf += `xref\n0 ${objs.length + 1}\n0000000000 65535 f \n`;
+  pdf += offsets.map((o) => `${String(o).padStart(10, '0')} 00000 n \n`).join('');
+  pdf += `trailer\n<< /Size ${objs.length + 1} /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF\n`;
+  return Buffer.from(pdf, 'latin1');
+}
+
 function startCollector() {
   return new Promise((res) => {
     const server = createServer(async (req, rq) => {
@@ -249,6 +334,10 @@ function startCollector() {
         return rq.end();
       }
       const name = decodeURIComponent(req.url.split('?')[0]).replace(/^\/+/, '') || 'demo.html';
+      if (name === 'scare.pdf') {
+        rq.writeHead(200, { 'content-type': 'application/pdf' });
+        return rq.end(makePdf());
+      }
       try {
         const file = await readFile(join(PAGES, name));
         rq.writeHead(200, {
@@ -288,6 +377,10 @@ console.log(`  firefox  ${firefox}`);
 const workDir = await mkdtemp(join(tmpdir(), 'foxy-ff-'));
 const buildDir = join(workDir, 'ext');
 await cp(DIST, buildDir, { recursive: true });
+// Probe build only: the Recently Closed check needs it. Never shipped.
+const probeManifest = JSON.parse(await readFile(join(buildDir, 'manifest.json'), 'utf8'));
+probeManifest.permissions.push('sessions');
+await writeFile(join(buildDir, 'manifest.json'), JSON.stringify(probeManifest, null, 2));
 await appendFile(join(buildDir, 'background.js'), `\n// verify-firefox probe\n${BACKGROUND_PROBE}`);
 await appendFile(join(buildDir, 'overlay.js'), `\n// verify-firefox probe\n${OVERLAY_PROBE}`);
 
@@ -321,6 +414,10 @@ const child = spawn(process.execPath, [
   // reporter's machine. 0 is dark here, not light.
   '--pref', 'ui.systemUsesDarkTheme=1',
   '--pref', 'layout.css.prefers-color-scheme.content-override=0',
+  // Over Remote Desktop with the client minimised, Windows reports every window
+  // as occluded, and Firefox holds media in a tab that has never been seen - so
+  // the scare tab sat silent and the run measured the RDP session instead.
+  '--pref', 'widget.windows.window_occlusion_tracking.enabled=false',
 ], { stdio: ['ignore', 'pipe', 'pipe'] });
 
 let webExtOutput = '';
@@ -345,7 +442,7 @@ console.log('  launching Firefox, waiting for the overlay to fire...');
  * The deadline still bounds it, so a genuinely broken build fails instead of
  * hanging.
  */
-const NEEDED = ['fire', 'video', 'playback', 'alpha', 'composite'];
+const NEEDED = ['fire', 'video', 'playback', 'alpha', 'composite', 'scare-tab', 'scare-playback'];
 const haveAll = () =>
   NEEDED.every((s) => reports.some((r) => r.stage === s)) &&
   // Same tab-order reasoning as pageHit below: waiting for merely *a* 'page'
@@ -412,6 +509,19 @@ const ok = [
     by('composite')?.after?.corners
       ? `corners on page colour: ${by('composite').after.corners.filter(Boolean).length}/4`
       : by('composite')?.after?.error ?? 'no report'),
+
+  check('scare tab opens beside a page that refuses the overlay',
+    by('scare-tab')?.fired === true && by('scare-tab')?.beside === true,
+    by('scare-tab')?.error ?? (by('scare-tab') ? 'a PDF in pdf.js' : 'no report')),
+  check('scare tab plays with sound, over a photo of the page',
+    by('scare-playback')?.paused === false && by('scare-playback')?.muted === false && by('scare-playback')?.photo === true,
+    by('scare-playback') ? `muted=${by('scare-playback').muted}, photo=${by('scare-playback').photo}` : 'no report'),
+  check('scare tab takes the photo back out of its URL', by('scare-playback')?.stripped === true),
+  check('scare tab closes itself and hands the page back',
+    by('scare-tab')?.backOnPage === true && (by('scare-tab')?.goneMs ?? Infinity) < 5000,
+    by('scare-tab') ? `gone after ${by('scare-tab').goneMs}ms` : 'no report'),
+  check('scare tab leaves nothing in Recently Closed', by('scare-tab')?.newlyClosed === 0,
+    by('scare-tab') ? `${by('scare-tab').newlyClosed} new` : 'no report'),
 ].every(Boolean);
 
 console.log();

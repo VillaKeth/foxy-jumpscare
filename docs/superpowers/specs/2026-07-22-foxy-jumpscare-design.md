@@ -157,6 +157,13 @@ Firefox, where H.264 depends on OS decoders while VP9 ships in-browser. See
   blank tabs. **When injection fails the roll is not consumed** — `remaining` stays at
   0 and it retries on the next tick. Without this the odds quietly skew against users
   who sit on restricted pages.
+- Unless the user opts out ("Scare me even with no page to draw on", on by default),
+  a scare that lands on such a page opens `overlay.html` in a **tab of its own**
+  beside it, and the background closes that tab when the clip ends and hands the user
+  back. In Firefox the tab first paints a `captureVisibleTab` photo of the page, so
+  Foxy still lunges over what they were reading; Chromium gets black, because it would
+  write the photo-bearing URL into history. (Until 0.1.11 this was a fullscreen popup
+  window on black.) See `lib/scare-tab.mjs`.
 - Requires the `<all_urls>` host permission. Unavoidable for inject-anywhere behavior;
   it means a scarier install prompt and slower store review.
 - Permissions: `alarms`, `idle`, `storage`, `scripting`, host `<all_urls>`. No

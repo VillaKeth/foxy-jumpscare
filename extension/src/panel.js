@@ -95,7 +95,7 @@ fallbackEl.addEventListener('change', async () => {
     fallbackChosen: true,
   });
   statusEl.textContent = fallbackEl.checked
-    ? 'Will use a black fullscreen window when there is no page.'
+    ? 'Will open a tab of his own when a page will not let him in.'
     : 'Will wait for an ordinary tab instead.';
 });
 
