@@ -13,6 +13,8 @@ const statusEl = el('status');
 const testEl = el('test');
 const fallbackEl = el('fallback');
 const soundEl = el('sound-every-tab');
+const countOutsideEl = el('count-outside-browser');
+const countedEl = el('counted');
 
 const presetNameFor = (oneInN) =>
   Object.keys(PRESETS).find((k) => PRESETS[k] === oneInN) ?? 'custom';
@@ -31,6 +33,11 @@ function renderOdds(oneInN) {
     `1 in ${oneInN.toLocaleString()} chance every active second, so ${describeOdds(oneInN)}.`;
 }
 
+/** What the countdown is measured in, which depends on the user's choice. */
+function renderCounted(countOutsideBrowser) {
+  countedEl.textContent = countOutsideBrowser ? 'time at the computer' : 'active browsing';
+}
+
 function renderRemaining(remaining) {
   remainingEl.textContent = remaining <= 0 ? 'any second' : formatDuration(remaining);
 }
@@ -47,12 +54,15 @@ async function load() {
   // real draw would show the user a countdown that the extension is not
   // actually running. `remaining` is read straight from the store instead.
   const stored = await chrome.storage.local.get(STATE_KEYS);
-  const { enabled, oneInN, fallbackWindow, soundEveryTab } = seedState(stored, () => 0);
+  const { enabled, oneInN, fallbackWindow, soundEveryTab, countOutsideBrowser } =
+    seedState(stored, () => 0);
   const remaining = stored.remaining ?? 0;
 
   enabledEl.checked = enabled;
   fallbackEl.checked = fallbackWindow;
   soundEl.checked = soundEveryTab;
+  countOutsideEl.checked = countOutsideBrowser;
+  renderCounted(countOutsideBrowser);
   oddsEl.value = presetNameFor(oneInN);
   customEl.value = String(oneInN);
   customFieldEl.classList.toggle('hidden', oddsEl.value !== 'custom');
@@ -104,6 +114,14 @@ soundEl.addEventListener('change', async () => {
   statusEl.textContent = soundEl.checked
     ? 'Every open tab will scream.'
     : 'Only the tab you are on will scream.';
+});
+
+countOutsideEl.addEventListener('change', async () => {
+  await chrome.storage.local.set({ countOutsideBrowser: countOutsideEl.checked });
+  renderCounted(countOutsideEl.checked);
+  statusEl.textContent = countOutsideEl.checked
+    ? 'Will keep counting while you use other apps.'
+    : 'Will only count while you are browsing.';
 });
 
 oddsEl.addEventListener('change', () => {

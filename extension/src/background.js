@@ -1,5 +1,5 @@
 import { drawRemaining } from './lib/roll.mjs';
-import { TICK_SECONDS, creditTick } from './lib/ticker.mjs';
+import { TICK_SECONDS, creditTick, countsTowardCountdown } from './lib/ticker.mjs';
 import { attemptFire } from './lib/fire.mjs';
 import { onCloseRequest } from './lib/scare-tab.mjs';
 import { seedState, STATE_KEYS } from './lib/state.mjs';
@@ -27,23 +27,20 @@ const fireOptions = (state) => ({
   soundEveryTab: state.soundEveryTab,
 });
 
-/**
- * chrome.idle reports *system* idle, so it stays 'active' while the user works
- * in another application entirely. The focus check is what makes this mean
- * "actively browsing" rather than "awake and at the computer".
- */
-async function isActiveBrowsing() {
+/** What countsTowardCountdown needs to know about the minute just gone. */
+async function sampleActivity() {
   const idleState = await chrome.idle.queryState(IDLE_THRESHOLD_SECONDS);
-  if (idleState !== 'active') return false;
   const win = await chrome.windows.getLastFocused().catch(() => null);
-  return Boolean(win?.focused);
+  return { idleState, browserFocused: Boolean(win?.focused) };
 }
 
 async function tick() {
   const state = await getState();
   if (!state.enabled) return;
 
-  const active = await isActiveBrowsing();
+  const active = countsTowardCountdown(await sampleActivity(), {
+    countOutsideBrowser: state.countOutsideBrowser,
+  });
   const credited = active ? TICK_SECONDS : 0;
   const { remaining, shouldFire } = creditTick(state, credited);
 

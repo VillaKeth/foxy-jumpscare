@@ -41,6 +41,7 @@ export const DEFAULTS = {
   fallbackWindow: true,
   fallbackChosen: false,
   soundEveryTab: false,
+  countOutsideBrowser: false,
 };
 
 export function seedState(stored, draw = drawRemaining) {
@@ -67,6 +68,7 @@ export function seedState(stored, draw = drawRemaining) {
       : DEFAULTS.fallbackWindow,
     fallbackChosen,
     soundEveryTab: current.soundEveryTab ?? DEFAULTS.soundEveryTab,
+    countOutsideBrowser: current.countOutsideBrowser ?? DEFAULTS.countOutsideBrowser,
     remaining: current.remaining ?? draw(oneInN),
   };
 }
@@ -78,5 +80,6 @@ export const STATE_KEYS = [
   'fallbackWindow',
   'fallbackChosen',
   'soundEveryTab',
+  'countOutsideBrowser',
   'remaining',
 ];

@@ -67,7 +67,8 @@ inspection.
 
 - `background.js` — an event-page background script. Drives a once-per-minute
   `chrome.alarms` tick, and credits elapsed time against a countdown only while
-  the browser is focused and the user is not idle.
+  the browser is focused and the user is not idle - or, if the user ticks
+  "Keep counting while I use other apps", whenever they are not idle.
 - `lib/roll.mjs` — the odds. Samples the wait once from a geometric
   distribution rather than rolling every second, because a 1 Hz timer in a
   background script is throttled and would silently bias the odds. Pure
@@ -132,7 +133,7 @@ store description and in the extension's own UI.
 ## Tests
 
 ```
-npm test               # 173 unit tests
+npm test               # 178 unit tests
 npm run lint:firefox   # addons-linter against dist/firefox
 npm run lint:package   # addons-linter against the built archive
 ```

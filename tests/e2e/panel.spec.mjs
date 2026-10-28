@@ -4,7 +4,7 @@ const SENTINEL = '#foxy-jumpscare-overlay';
 
 const readState = (worker) =>
   worker.evaluate(() =>
-    chrome.storage.local.get(['enabled', 'oneInN', 'remaining', 'fallbackWindow', 'soundEveryTab']));
+    chrome.storage.local.get(['enabled', 'oneInN', 'remaining', 'fallbackWindow', 'soundEveryTab', 'countOutsideBrowser']));
 
 /**
  * Seed storage, once the extension has finished seeding it itself.
@@ -152,4 +152,26 @@ test('the every-tab sound checkbox is off by default and persists when ticked', 
   await panel.locator('#sound-every-tab').check();
   await expect(panel.locator('#status')).toHaveText('Every open tab will scream.');
   expect((await readState(worker)).soundEveryTab).toBe(true);
+});
+
+test('the count-outside-the-browser checkbox is off by default and persists when ticked', async ({ context, worker, extensionId }) => {
+  await setState(worker, { oneInN: 100_000, remaining: 90_061 });
+
+  const panel = await openPanel(context, extensionId);
+  await expect(panel.locator('#count-outside-browser')).not.toBeChecked();
+  await expect(panel.locator('.countdown')).toContainText('1d 1h of active browsing.');
+
+  await panel.locator('#count-outside-browser').check();
+  await expect(panel.locator('#status')).toHaveText('Will keep counting while you use other apps.');
+  // The countdown line names what it is counting, so it changes with the box.
+  await expect(panel.locator('.countdown')).toContainText('1d 1h of time at the computer.');
+  expect((await readState(worker)).countOutsideBrowser).toBe(true);
+});
+
+test('the panel shows a stored count-outside-the-browser choice when it opens', async ({ context, worker, extensionId }) => {
+  await setState(worker, { oneInN: 100_000, remaining: 90_061, countOutsideBrowser: true });
+
+  const panel = await openPanel(context, extensionId);
+  await expect(panel.locator('#count-outside-browser')).toBeChecked();
+  await expect(panel.locator('.countdown')).toContainText('of time at the computer.');
 });

@@ -1,5 +1,10 @@
 import { describe, it, expect } from 'vitest';
-import { TICK_SECONDS, creditTick, isInjectableUrl } from '../../extension/src/lib/ticker.mjs';
+import {
+  TICK_SECONDS,
+  creditTick,
+  countsTowardCountdown,
+  isInjectableUrl,
+} from '../../extension/src/lib/ticker.mjs';
 
 describe('TICK_SECONDS', () => {
   it('is 60, the chrome.alarms floor', () => {
@@ -28,6 +33,36 @@ describe('creditTick', () => {
 
   it('does not advance when no active seconds are credited', () => {
     expect(creditTick({ remaining: 500 }, 0)).toEqual({ remaining: 500, shouldFire: false });
+  });
+});
+
+describe('countsTowardCountdown', () => {
+  it('counts a minute spent in the browser', () => {
+    expect(countsTowardCountdown({ idleState: 'active', browserFocused: true })).toBe(true);
+  });
+
+  it('does not count time in another app, by default', () => {
+    // chrome.idle is system-wide: it reads 'active' while the user plays a
+    // game with the browser in the background. The focus check is what keeps
+    // those minutes off a countdown advertised as "active browsing".
+    expect(countsTowardCountdown({ idleState: 'active', browserFocused: false })).toBe(false);
+  });
+
+  it('counts time in another app when the user asked for that', () => {
+    const away = { idleState: 'active', browserFocused: false };
+    expect(countsTowardCountdown(away, { countOutsideBrowser: true })).toBe(true);
+  });
+
+  it('never counts an idle or locked machine, even when counting outside the browser', () => {
+    // A machine left on overnight must not burn the odds, whatever the user
+    // asked for. The option widens "active" to other apps, not to absence.
+    for (const idleState of ['idle', 'locked']) {
+      for (const browserFocused of [true, false]) {
+        const minute = { idleState, browserFocused };
+        expect(countsTowardCountdown(minute, { countOutsideBrowser: true })).toBe(false);
+        expect(countsTowardCountdown(minute)).toBe(false);
+      }
+    }
   });
 });
 

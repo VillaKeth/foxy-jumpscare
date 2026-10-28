@@ -100,8 +100,18 @@
   at once.
 </p>
 
+<div class="row">
+  <input type="checkbox" id="count-outside-browser">
+  <label for="count-outside-browser">Keep counting while I use other apps</label>
+</div>
+<p class="hint">
+  Normally the countdown only runs while you are using the browser. On, it also
+  runs while you are at the computer in other apps, so he comes around sooner.
+  He still waits for you to come back: a browser cannot draw over other apps.
+</p>
+
 <div class="countdown">
-  Next one in about <b id="remaining">&mdash;</b> of active browsing.
+  Next one in about <b id="remaining">&mdash;</b> of <span id="counted">active browsing</span>.
 </div>
 
 <p class="status" id="status"></p>

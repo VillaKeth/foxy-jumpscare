@@ -16,6 +16,8 @@ describe('seedState, on a first install', () => {
       fallbackChosen: false,
       // One scream, from the tab you are on. Background tabs get a silent copy.
       soundEveryTab: false,
+      // The countdown runs only while you are browsing, unless you ask for more.
+      countOutsideBrowser: false,
       remaining: 4242,
     });
   });
@@ -79,6 +81,10 @@ describe('seedState, on an update', () => {
     expect(seedState({ soundEveryTab: true }, draw).soundEveryTab).toBe(true);
   });
 
+  it('keeps counting outside the browser switched on if the user ticked it', () => {
+    expect(seedState({ countOutsideBrowser: true }, draw).countOutsideBrowser).toBe(true);
+  });
+
   it('preserves a fully populated record untouched', () => {
     const stored = {
       oneInN: 60,
@@ -86,6 +92,7 @@ describe('seedState, on an update', () => {
       fallbackWindow: false,
       fallbackChosen: true,
       soundEveryTab: true,
+      countOutsideBrowser: true,
       remaining: 12,
     };
     expect(seedState(stored, draw)).toEqual(stored);

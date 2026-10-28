@@ -85,6 +85,8 @@ Click the fox in the toolbar.
 | **Rarity** | Presets from Ultra-rare (~10 weeks) to Terraria-faithful (~2h46m of browsing). |
 | **Custom** | Any 1-in-N you like. `60` fires within a minute or two — good for showing someone. |
 | **Scare me even with no page to draw on** | **On by default.** Foxy normally appears *over* the page you are reading. A settings page, a PDF, the new tab page and `addons.mozilla.org` will not let him in, so this opens him in a tab of his own right beside it, over a picture of the page, for about a second — then you are back where you were. Untick it and he waits for an ordinary tab — the countdown is not spent while he waits, so nothing is lost either way. |
+| **Scream from every open tab** | **Off by default.** Foxy shows up in all your tabs, so he is still there if you switch mid-scare, but only the one you are looking at screams. Tick it and every open tab screams at once. |
+| **Keep counting while I use other apps** | **Off by default.** Tick it and the countdown also runs while you are at the computer in other apps, so he comes around sooner. He still waits for you to come back to Firefox: a browser cannot draw over other apps. |
 | **Test it now** | Fires immediately. Does **not** spend the real countdown. |
 
 Changing the rarity restarts the countdown. It has to — a countdown drawn at
@@ -93,7 +95,8 @@ look like it did nothing for a week.
 
 "Active browsing" is literal: the countdown only advances while Firefox is
 focused and you are not idle. It does not run while you are in another app,
-away from the machine, or locked.
+away from the machine, or locked - unless you tick "Keep counting while I use
+other apps", which drops the first of those. Away and locked never count.
 
 ---
 

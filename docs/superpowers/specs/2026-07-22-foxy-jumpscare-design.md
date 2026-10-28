@@ -99,12 +99,14 @@ these magnitudes; it is not corrected in v1.
 
 | | Tick period | "Active" means |
 |---|---|---|
-| Extension | 60s (`chrome.alarms` minimum on Chrome) | `chrome.idle.queryState(15) === 'active'` **and** a browser window has focus |
+| Extension | 60s (`chrome.alarms` minimum on Chrome) | `chrome.idle.queryState(15) === 'active'` **and** a browser window has focus (the focus half is dropped when the user opts into `countOutsideBrowser`) |
 | Desktop | 30s | `GetLastInputInfo` reports input within 60s **and** session not locked |
 
 The extension's focus check is load-bearing: `chrome.idle` measures *system* idle, so
 without it a user working in another app all day with Chrome open in the background
-would accrue "browsing" seconds they never spent.
+would accrue "browsing" seconds they never spent. That is why counting time in other apps
+(`countOutsideBrowser`, panel: "Keep counting while I use other apps") is opt-in and off by
+default - a user asked for it in an AMO review in October 2026.
 
 ## Component: browser extension
 

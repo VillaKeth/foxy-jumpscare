@@ -26,6 +26,23 @@ export function creditTick(state, activeSeconds) {
   return { remaining, shouldFire: remaining <= 0 };
 }
 
+/**
+ * Whether the minute just gone counts towards the countdown.
+ *
+ * chrome.idle reports *system* idle, so it stays 'active' while the user works
+ * in another application entirely. The focus check is what makes the default
+ * mean "actively browsing" rather than "awake and at the computer".
+ *
+ * `countOutsideBrowser` drops that check, for people who leave the browser
+ * open behind a game and want Foxy waiting when they come back. It never makes
+ * an idle or locked machine count: a computer left on overnight still must not
+ * burn the odds.
+ */
+export function countsTowardCountdown({ idleState, browserFocused }, { countOutsideBrowser = false } = {}) {
+  if (idleState !== 'active') return false;
+  return countOutsideBrowser || browserFocused;
+}
+
 /** Whether a content script can be injected into this URL at all. */
 export function isInjectableUrl(url) {
   if (!url || typeof url !== 'string') return false;

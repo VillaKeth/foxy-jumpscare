@@ -1,6 +1,6 @@
 # Privacy Policy — Foxy Jumpscare
 
-**Last updated:** 9 October 2026
+**Last updated:** 28 October 2026
 **Applies to:** the Foxy Jumpscare browser extension, all versions, on every store
 it is listed at.
 
@@ -16,7 +16,7 @@ or sends — see "The picture of the page" below.
 
 ## What is stored, and where
 
-Six values, in your browser's local extension storage (`chrome.storage.local`):
+Seven values, in your browser's local extension storage (`chrome.storage.local`):
 
 | Key | What it is |
 | --- | --- |
@@ -25,6 +25,7 @@ Six values, in your browser's local extension storage (`chrome.storage.local`):
 | `fallbackWindow` | Whether a scare may open in a tab of its own when the page you are on will not let the overlay in. |
 | `fallbackChosen` | Whether you changed the setting above yourself, so a later default never overrides your choice. |
 | `soundEveryTab` | Whether every open tab screams, or only the one you are looking at. |
+| `countOutsideBrowser` | Whether the countdown keeps running while you use other apps, or only while you are browsing. |
 | `remaining` | How many active seconds are left before the next scare. |
 
 That is the complete list. None of it identifies you, and none of it leaves your
