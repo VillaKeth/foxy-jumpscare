@@ -140,6 +140,12 @@ async function scareTabRun() {
     await new Promise((r) => setTimeout(r, 2000)); // pdf.js renders it
     const closedBefore = (await chrome.sessions.getRecentlyClosed({})).map(key);
 
+    // As in the first run: with no focused window attemptFire declines on
+    // purpose, which reads as a scare tab that never opened. Over RDP one click
+    // in any other window is enough to cause that.
+    await chrome.windows.update(page.windowId, { focused: true }).catch(() => {});
+    report.focused = (await chrome.windows.get(page.windowId).catch(() => null))?.focused ?? null;
+
     const t0 = Date.now();
     report.fired = await globalThis.__foxyTest.fireNow();
     const [tab] = await chrome.tabs.query({ windowId: page.windowId, index: page.index + 1 });
@@ -512,15 +518,19 @@ const ok = [
 
   check('scare tab opens beside a page that refuses the overlay',
     by('scare-tab')?.fired === true && by('scare-tab')?.beside === true,
-    by('scare-tab')?.error ?? (by('scare-tab') ? 'a PDF in pdf.js' : 'no report')),
+    by('scare-tab')?.error ?? (!by('scare-tab') ? 'no report'
+      : by('scare-tab').fired ? 'a PDF in pdf.js'
+      : `did not fire - window focused: ${by('scare-tab').focused}`)),
   check('scare tab plays with sound, over a photo of the page',
     by('scare-playback')?.paused === false && by('scare-playback')?.muted === false && by('scare-playback')?.photo === true,
     by('scare-playback') ? `muted=${by('scare-playback').muted}, photo=${by('scare-playback').photo}` : 'no report'),
   check('scare tab takes the photo back out of its URL', by('scare-playback')?.stripped === true),
   check('scare tab closes itself and hands the page back',
-    by('scare-tab')?.backOnPage === true && (by('scare-tab')?.goneMs ?? Infinity) < 5000,
+    by('scare-tab')?.fired === true && by('scare-tab')?.backOnPage === true
+      && (by('scare-tab')?.goneMs ?? Infinity) < 5000,
     by('scare-tab') ? `gone after ${by('scare-tab').goneMs}ms` : 'no report'),
-  check('scare tab leaves nothing in Recently Closed', by('scare-tab')?.newlyClosed === 0,
+  check('scare tab leaves nothing in Recently Closed',
+    by('scare-tab')?.fired === true && by('scare-tab')?.newlyClosed === 0,
     by('scare-tab') ? `${by('scare-tab').newlyClosed} new` : 'no report'),
 ].every(Boolean);
 
